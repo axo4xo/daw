@@ -17,8 +17,9 @@ reinvented. Desktop-first and landscape, mobile isn't a goal.
 
 MVP scope:
 
-- [ ] Project scaffold
-- [ ] UI shell: transport, track list, mixer
+- [x] Project scaffold
+- [x] UI shell: transport, track list, mixer
+- [ ] Wire the openDAW engine (real audio behind the shell)
 - [ ] Multiple audio tracks
 - [ ] Basic mixing: gain, pan, mute / solo
 - [ ] Simple effects
@@ -26,6 +27,12 @@ MVP scope:
 - [ ] Simple MIDI player
 
 Anything past the MVP is open-ended.
+
+## Develop
+
+Uses [bun](https://bun.sh). `bun install`, then `bun run dev` and open
+http://localhost:8080. The engine isn't wired yet, so playback/meters are
+placeholders for now.
 
 ## License
 
