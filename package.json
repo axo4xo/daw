@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@opendaw/studio-sdk": "^0.0.154",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {
