@@ -1,5 +1,4 @@
 import {isDefined, Optional, Subscription, UUID} from "@opendaw/lib-std"
-import {AudioUnitType} from "@opendaw/studio-enums"
 import {AudioUnitBoxAdapter, InstrumentFactories} from "@opendaw/studio-adapters"
 import {Project} from "@opendaw/studio-core"
 import type {Unsubscribe} from "./studio"
@@ -13,7 +12,7 @@ export type InstrumentKey = InstrumentFactories.Keys
 export type MixerTrack = {
     readonly uuid: string
     readonly label: string
-    readonly type: AudioUnitType
+    readonly type: string // AudioUnitType value: "instrument" | "bus" | "aux" | "output"
     readonly volume: number      // normalised 0..1, for a fader
     readonly volumeText: string  // formatted, e.g. "-6.0 dB"
     readonly pan: number         // raw value, typically -1..1

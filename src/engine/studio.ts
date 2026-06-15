@@ -30,6 +30,7 @@ export interface Studio {
     readonly project: Project
     readonly engine: EngineFacade
     readonly mixer: MixerApi
+    readonly timebase: {readonly pulsesPerQuarter: number; readonly pulsesPerBar: number}
     play(): void
     stop(reset?: boolean): void
     setPosition(pulses: ppqn): void
@@ -93,6 +94,7 @@ export const createStudio = async (): Promise<Studio> => {
         project,
         engine,
         mixer: createMixerApi(project),
+        timebase: {pulsesPerQuarter: PPQN.Quarter, pulsesPerBar: PPQN.Bar},
         play: () => { void audioContext.resume(); engine.play() },
         stop: (reset = true) => engine.stop(reset),
         setPosition: pulses => engine.setPosition(pulses),

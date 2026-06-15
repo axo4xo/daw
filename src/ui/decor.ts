@@ -1,0 +1,81 @@
+// Static visual data ported from the Looper mockup. These are placeholders for the
+// parts the engine doesn't expose yet (clips, waveform, device chains, browser).
+// The track list will become engine-backed (studio.mixer) in a later pass.
+
+export const hexA = (hex: string, alpha: number): string => {
+    const value = hex.replace("#", "")
+    const r = parseInt(value.slice(0, 2), 16)
+    const g = parseInt(value.slice(2, 4), 16)
+    const b = parseInt(value.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+export type ClipKind = "midi" | "audio"
+export type DecorClip = {title: string; left: number; width: number; kind: ClipKind; color: string}
+export type DecorTrack = {name: string; accent: string; vol: string; meter: number; pan: number; clips: DecorClip[]}
+
+export const NEUTRAL = "#43434d"
+export const palette = ["#e9789b", "#f0a85a", "#7aa7f5", "#a374f5", "#5ec8c0", "#b7d96a"]
+export const MIDI_PATTERN = "repeating-linear-gradient(90deg, rgba(255,255,255,0.22) 0 5px, transparent 5px 13px)"
+export const AUDIO_PATTERN = "repeating-linear-gradient(90deg, rgba(255,255,255,0.16) 0 2px, transparent 2px 5px)"
+
+export const decorTracks: ReadonlyArray<DecorTrack> = [
+    {name: "Track 1", accent: "#e9789b", vol: "-3.5", meter: 0.82, pan: -8, clips: [
+        {title: "Kick 808", left: 6, width: 13, kind: "midi", color: "#e9789b"},
+        {title: "Beat A", left: 21, width: 21, kind: "midi", color: "#e9789b"},
+        {title: "Beat B", left: 45, width: 25, kind: "midi", color: "#e9789b"},
+        {title: "Beat A", left: 73, width: 17, kind: "midi", color: "#e9789b"}]},
+    {name: "Track 2", accent: "#f0a85a", vol: "-5.0", meter: 0.66, pan: 0, clips: [
+        {title: "Sub", left: 21, width: 21, kind: "midi", color: "#f0a85a"},
+        {title: "Sub 2", left: 45, width: 25, kind: "midi", color: "#f0a85a"}]},
+    {name: "Track 3", accent: "#7aa7f5", vol: "-8.2", meter: 0.4, pan: 12, clips: [
+        {title: "Chords", left: 6, width: 13, kind: "midi", color: "#7aa7f5"},
+        {title: "Chords", left: 45, width: 25, kind: "midi", color: "#7aa7f5"},
+        {title: "Hook", left: 73, width: 17, kind: "midi", color: "#a374f5"}]},
+    {name: "Track 4", accent: "#a374f5", vol: "-7.0", meter: 0.52, pan: -15, clips: [
+        {title: "Hook", left: 45, width: 25, kind: "midi", color: "#a374f5"},
+        {title: "Hook", left: 73, width: 17, kind: "midi", color: "#a374f5"}]},
+    {name: "Track 5", accent: "#5ec8c0", vol: "-12.0", meter: 0.28, pan: 20, clips: [
+        {title: "Warm Pad", left: 6, width: 36, kind: "midi", color: "#5ec8c0"},
+        {title: "Pad", left: 73, width: 17, kind: "midi", color: "#5ec8c0"}]},
+    {name: "Track 6", accent: "#b7d96a", vol: "-4.5", meter: 0.7, pan: 5, clips: [
+        {title: "Verse", left: 21, width: 21, kind: "audio", color: "#b7d96a"},
+        {title: "Hook Vox", left: 45, width: 25, kind: "audio", color: "#b7d96a"}]}
+]
+
+export const rulerBars = [1, 5, 9, 13, 17, 21, 25, 29]
+export const waveBars = [1, 5, 9, 13, 17, 21, 25, 29, 33]
+
+export const browserItems = ["Drums", "Instruments", "Audio Effects", "MIDI Effects", "Plug-ins", "Clips", "Samples", "Grooves"]
+export const browserSamples = ["808 Kick", "808 Clap", "808 HiHat", "808 Snare", "Open Hat"]
+export const scenes = ["Intro", "Verse", "Drop", "Break", "Bridge", "Outro"]
+
+export type DecorKnob = {label: string; value: string; rotation: string}
+export type DecorDevice = {name: string; accent: string; knobs: ReadonlyArray<DecorKnob>}
+export const devices: ReadonlyArray<DecorDevice> = [
+    {name: "EQ Eight", accent: "#7aa7f5", knobs: [
+        {label: "Freq", value: "440", rotation: "-50deg"},
+        {label: "Gain", value: "+2.0", rotation: "35deg"},
+        {label: "Q", value: "0.7", rotation: "-85deg"}]},
+    {name: "OTT", accent: "#e9789b", knobs: [
+        {label: "Depth", value: "100%", rotation: "130deg"},
+        {label: "Time", value: "120", rotation: "120deg"},
+        {label: "In", value: "0.0", rotation: "0deg"},
+        {label: "Out", value: "0.0", rotation: "0deg"}]},
+    {name: "Crystallizer", accent: "#a374f5", knobs: [
+        {label: "Mix", value: "40%", rotation: "-60deg"},
+        {label: "Pitch", value: "+7", rotation: "45deg"},
+        {label: "Delay", value: "1/8", rotation: "10deg"},
+        {label: "Recycle", value: "55%", rotation: "70deg"}]}
+]
+
+export const waveform: ReadonlyArray<number> = Array.from({length: 130}, (_unused, i) => {
+    const env = 0.5 + 0.42 * Math.sin(i / 13 + 1)
+    const detail = Math.abs(Math.sin(i * 0.9)) * 0.55 + Math.abs(Math.sin(i * 0.41 + 2)) * 0.45
+    return Math.max(5, Math.min(98, (0.18 + env * 0.6 * detail) * 100))
+})
+
+export const panLabel = (pan: number): string => pan === 0 ? "C" : pan < 0 ? `${Math.abs(pan)} L` : `${pan} R`
+export const panRotation = (pan: number): string => `${pan * 4}deg`
+// Fader thumb position from a dB string, mapped onto a -15..0 dB visible range.
+export const faderBottom = (vol: string): string => `${Math.max(12, Math.min(88, ((parseFloat(vol) + 15) / 15) * 100))}%`
