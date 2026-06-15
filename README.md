@@ -2,7 +2,7 @@
 
 An opinionated, web-based DAW. Simple, light, intuitive, free.
 
-The idea is an FL Studio / Ableton-style interface that runs in the browser,
+The idea is a modern DAW interface that runs in the browser,
 built on top of the [openDAW](https://github.com/andremichelle/openDAW) headless
 engine so the hard parts, real-time DSP, mixing, MIDI, don't have to be
 reinvented. Desktop-first and landscape, mobile isn't a goal.
