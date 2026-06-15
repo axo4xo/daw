@@ -17,10 +17,10 @@ reinvented. Desktop-first and landscape, mobile isn't a goal.
 
 MVP scope:
 
-- [ ] Project scaffold (Vite + Solid, engine wired up)
-- [ ] UI shell — transport, track list, mixer
+- [ ] Project scaffold
+- [ ] UI shell: transport, track list, mixer
 - [ ] Multiple audio tracks
-- [ ] Basic mixing — gain, pan, mute / solo
+- [ ] Basic mixing: gain, pan, mute / solo
 - [ ] Simple effects
 - [ ] Basic parametric EQ
 - [ ] Simple MIDI player
