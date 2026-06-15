@@ -62,6 +62,40 @@ Three concerns live on **two threads**, separated by a hard boundary. Understand
 - **The SDK is alpha (`0.0.x`).** Expect breaking changes between releases. Pin the version, isolate SDK calls behind a thin wrapper/adapter module so an API change touches one place, and check the headless template for the current usage pattern rather than assuming an older API.
 - **Desktop / landscape only.** Don't spend effort on mobile/touch layouts or responsive breakpoints below tablet landscape.
 
+## Code conventions
+
+This project lives inside the openDAW ecosystem, so we follow openDAW's house style where it keeps us consistent with the SDK. Most of these rely on utilities from **`@opendaw/lib-std`** (openDAW's standard library) — reach for those instead of hand-rolling equivalents.
+
+**Null / optional handling (via `@opendaw/lib-std`):**
+- Never write `| null` or `| undefined` inline — use `Optional<T>` and `Nullable<T>`.
+- Never use falsy checks (`!value`, `if (!value)`) for null/undefined. Use `isDefined(value)`, `!isDefined(value)`, or `isAbsent(value)`.
+- Use `Option<T>` (not `Optional<T>`) for **fallible** return values.
+- Prefer `MutableObservableOption<T>` over `DefaultObservableValue<Nullable<T>>`; use `wrap(value)` / `clear()` rather than `setValue(value)` / `setValue(null)`.
+
+**Types:**
+- Never use `as any`, and never use `"foo" in bar` for type checks — define proper types and type guards.
+- Use the real type from its source; don't invent ad-hoc structural types (`{ name: string, value: number }`) when one already exists.
+- Never use `!` definite-assignment (`let x!: T`) to silence the compiler.
+- For UUID collections use `UUID.newSet` / `UUID.newMap` (byte-correct `SortedSet`), never a plain `Set`/`Map` over `UUID.Bytes`.
+- Type-check with `tsc --noEmit` so no stray `.js` / `.d.ts` files get emitted.
+
+**Error handling:**
+- No `try/catch` — use `tryCatch()` from `@opendaw/lib-std`.
+
+**Style:**
+- Minimize comments; code should be self-explanatory. Comment only genuinely non-obvious logic.
+- No blank lines inside method bodies — keep them compact.
+- Compact destructuring: group properties on one line, breaking to multiple lines only past ~120 chars.
+- Descriptive lambda parameters (`entry`, `value`, `event`) — never single letters.
+- Move complex field setup into the constructor instead of inline field initializers.
+- Toggle visibility with a `.hidden` class (`classList.add/remove("hidden")`), not `style.display`.
+
+**Solid note:** openDAW's "create elements as `const` and embed them as `{el}`" rule is specific to its *vanilla-TS* JSX. We use **SolidJS**, so achieve the same ends with signals, `<Show>` / conditional rendering, and `classList`. The intent behind it — no `!` assertions, no imperative `display` toggling — still applies.
+
+**Workflow:**
+- For non-trivial bugs, analyze and propose the fix first; wait for approval before editing code.
+- Prefer small `Edit` diffs over rewriting whole files with `Write`.
+
 ## Licensing
 
 openDAW (and therefore anything built on `@opendaw/studio-sdk`) is **AGPL-3**. This project is intended to be **free and open-source**, which satisfies AGPL — but it means: any modifications and the full corresponding source must be made available to users who interact with it **over a network** (the AGPL "network use" clause). Keep the repo's licensing AGPL-3-compatible. A paid commercial license from openDAW exists if a proprietary path is ever needed; that is a deliberate, separate decision.
