@@ -18,6 +18,7 @@ export type StudioState = {
     pulsesPerQuarter: number
     pulsesPerBar: number
     tracks: ReadonlyArray<MixerTrack>
+    selectedTrack: string
 }
 
 export interface StudioController {
@@ -28,6 +29,7 @@ export interface StudioController {
     setBpm(value: number): void
     loadDemo(): void
     addTrack(instrument?: InstrumentKey): void
+    select(uuid: string): void
     setVolume(uuid: string, unitValue: number): void
     setPan(uuid: string, value: number): void
     toggleMute(uuid: string): void
@@ -38,7 +40,7 @@ export interface StudioController {
 const createController = (): StudioController => {
     const [state, setState] = createStore<StudioState>({
         phase: "idle", error: "", playing: false, bpm: 120, position: 0, cpu: 0,
-        pulsesPerQuarter: 0, pulsesPerBar: 0, tracks: []
+        pulsesPerQuarter: 0, pulsesPerBar: 0, tracks: [], selectedTrack: ""
     })
     let studio: Studio | undefined
     const subscriptions: Array<() => void> = []
@@ -59,7 +61,13 @@ const createController = (): StudioController => {
         subscriptions.push(current.onBpmChange(value => setState("bpm", value)))
         subscriptions.push(current.onPositionChange(position => setState("position", position)))
         subscriptions.push(current.onCpuLoadChange(cpu => setState("cpu", cpu)))
-        subscriptions.push(current.mixer.subscribe(tracks => setState("tracks", tracks)))
+        subscriptions.push(current.mixer.subscribe(tracks => {
+            setState("tracks", tracks)
+            if (!tracks.some(track => track.uuid === state.selectedTrack)) {
+                const first = tracks.find(track => track.type !== "output")
+                setState("selectedTrack", first !== undefined ? first.uuid : "")
+            }
+        }))
         setState("phase", "ready")
     }
     const trackBy = (uuid: string): MixerTrack | undefined => state.tracks.find(track => track.uuid === uuid)
@@ -70,7 +78,11 @@ const createController = (): StudioController => {
         stop: () => withStudio(current => current.stop()),
         setBpm: value => withStudio(current => current.setBpm(value)),
         loadDemo: () => withStudio(current => current.loadDemo()),
-        addTrack: instrument => withStudio(current => current.mixer.createInstrumentTrack(instrument)),
+        addTrack: instrument => withStudio(current => {
+            const uuid = current.mixer.createInstrumentTrack(instrument)
+            if (uuid !== undefined) setState("selectedTrack", uuid)
+        }),
+        select: uuid => setState("selectedTrack", uuid),
         setVolume: (uuid, unitValue) => withStudio(current => current.mixer.setVolume(uuid, unitValue)),
         setPan: (uuid, value) => withStudio(current => current.mixer.setPan(uuid, value)),
         toggleMute: uuid => withStudio(current => {

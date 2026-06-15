@@ -185,7 +185,13 @@ const Browser = () => (
 )
 
 const ClipDetail = () => {
+    const state = useStudio().state
     const [bottom, setBottom] = createSignal<Bottom>("sample")
+    const selectedName = (): string => {
+        const channels = state.tracks.filter(track => track.type !== "output")
+        const index = channels.findIndex(track => track.uuid === state.selectedTrack)
+        return index >= 0 ? `Track ${index + 1}` : "—"
+    }
     return (
         <div class="clipdetail">
             <div class="cd-head">
@@ -198,8 +204,8 @@ const ClipDetail = () => {
                     </button>
                 </div>
                 <span class="cd-dot"/>
-                <span class="cd-title">Beat A</span>
-                <span class="cd-sub">Track 1 · 48.0 kHz · Stereo</span>
+                <span class="cd-title">{selectedName()}</span>
+                <span class="cd-sub">48.0 kHz · Stereo</span>
             </div>
             <Show when={bottom() === "sample"} fallback={
                 <div class="devices">
@@ -269,7 +275,8 @@ const ArrangeView = (props: {playheadLeft: string}) => {
                     const live = (): boolean => state.playing && !track.mute
                     return (
                         <div class="lane-row">
-                            <div class="track-head">
+                            <div class="track-head" classList={{selected: state.selectedTrack === track.uuid}}
+                                 onClick={() => studio.select(track.uuid)}>
                                 <span class="track-color" style={{background: NEUTRAL}}/>
                                 <div class="track-meta">
                                     <span class="track-name">Track {index() + 1}</span>
@@ -281,6 +288,8 @@ const ArrangeView = (props: {playheadLeft: string}) => {
                                         </div>
                                     </div>
                                 </div>
+                                <button class="track-remove" title="Remove track"
+                                        onClick={event => { event.stopPropagation(); studio.removeTrack(track.uuid) }}>✕</button>
                             </div>
                             <div class="lane">
                                 <For each={clips}>{clip => (
@@ -295,6 +304,7 @@ const ArrangeView = (props: {playheadLeft: string}) => {
                         </div>
                     )
                 }}</For>
+                <button class="add-track-row" onClick={() => studio.addTrack("Vaporisateur")}>+ Add Track</button>
             </div>
             <ClipDetail/>
         </div>
@@ -305,7 +315,8 @@ const ChannelStrip = (props: {name: string; track: MixerTrack; accent: string; i
     const studio = useStudio()
     const live = (): boolean => studio.state.playing && !props.track.mute
     return (
-        <div class="strip">
+        <div class="strip" classList={{selected: studio.state.selectedTrack === props.track.uuid}}
+             onClick={() => studio.select(props.track.uuid)}>
             <div class="strip-name" style={{"border-color": props.accent}}>{props.name}</div>
             <PanKnob value={props.track.pan} accent={props.accent} onChange={value => studio.setPan(props.track.uuid, value)}/>
             <span class="strip-pan">{panText(props.track.pan)}</span>
@@ -340,7 +351,8 @@ const MasterStrip = (props: {track: MixerTrack}) => {
 }
 
 const MixView = () => {
-    const state = useStudio().state
+    const studio = useStudio()
+    const state = studio.state
     const channels = (): ReadonlyArray<MixerTrack> => state.tracks.filter(track => track.type !== "output")
     const master = (): MixerTrack | undefined => state.tracks.find(track => track.type === "output")
     return (
@@ -348,6 +360,7 @@ const MixView = () => {
             <For each={channels()}>
                 {(track, index) => <ChannelStrip name={`Track ${index() + 1}`} index={index()} track={track} accent={palette[index() % palette.length]}/>}
             </For>
+            <button class="strip add" onClick={() => studio.addTrack("Vaporisateur")}>+ Track</button>
             <Show when={master()}>{value => <MasterStrip track={value()}/>}</Show>
         </div>
     )

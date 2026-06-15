@@ -113,7 +113,14 @@ svg { display: block; }
 .ruler-ph { position: absolute; top: 0; transform: translateX(-50%); border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--violet); }
 .lanes { flex: 1; min-height: 0; overflow-y: auto; }
 .lane-row { display: flex; height: 72px; border-bottom: 1px solid #1d1d23; }
-.track-head { width: 176px; flex: none; border-right: 1px solid var(--bd); display: flex; align-items: center; gap: 9px; padding: 0 12px; background: var(--panel); }
+.track-head { position: relative; width: 176px; flex: none; border-right: 1px solid var(--bd); display: flex; align-items: center; gap: 9px; padding: 0 12px; background: var(--panel); cursor: pointer; }
+.track-head.selected { background: rgba(163, 116, 245, 0.1); }
+.track-head.selected .track-color { box-shadow: 0 0 0 1px var(--violet); }
+.track-remove { position: absolute; top: 6px; right: 6px; width: 16px; height: 16px; border-radius: 4px; color: var(--t7); font-size: 10px; opacity: 0; }
+.track-head:hover .track-remove { opacity: 1; }
+.track-remove:hover { color: var(--red); background: rgba(224, 85, 106, 0.12); }
+.add-track-row { width: 176px; height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--t6); font-size: 12px; font-weight: 600; background: var(--panel); border-bottom: 1px solid #1d1d23; }
+.add-track-row:hover { color: var(--vtext); }
 .track-color { width: 4px; height: 42px; border-radius: 3px; flex: none; }
 .track-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .track-name { font-size: 12.5px; font-weight: 600; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -169,6 +176,10 @@ svg { display: block; }
 /* Mix */
 .mix { position: absolute; inset: 0; display: flex; align-items: stretch; gap: 8px; padding: 18px; overflow: auto; }
 .strip { width: 104px; flex: none; background: var(--bar); border: 1px solid var(--bd2); border-radius: 11px; display: flex; flex-direction: column; align-items: center; padding: 12px 10px; gap: 12px; }
+.strip { cursor: pointer; }
+.strip.selected { border-color: var(--vbd); box-shadow: 0 0 0 1px var(--vbd); }
+.strip.add { width: 88px; align-items: center; justify-content: center; color: var(--t6); font-size: 12px; font-weight: 600; border-style: dashed; }
+.strip.add:hover { color: var(--vtext); border-color: var(--vbd); }
 .strip.master { width: 118px; background: var(--card); border-color: var(--bd4); margin-left: 6px; }
 .strip-name { width: 100%; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--t2); padding-bottom: 9px; border-bottom: 2px solid var(--violet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strip-pan { font-family: var(--mono); font-size: 10px; color: var(--t6); }
