@@ -101,6 +101,9 @@ svg { display: block; }
 .browser-group { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--bd-soft); }
 .browser-group-label { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--t8); padding: 0 9px 6px; }
 .sample-row { display: flex; align-items: center; gap: 9px; height: 26px; padding: 0 9px; border-radius: 6px; color: var(--t5); font-size: 12px; }
+.sample-row { cursor: grab; }
+.sample-row:hover { color: var(--t2); background: rgba(255, 255, 255, 0.05); }
+.sample-row:active { cursor: grabbing; }
 
 .viewarea { flex: 1; min-width: 0; position: relative; background: var(--view); }
 .screen { position: absolute; inset: 0; display: flex; flex-direction: column; }
@@ -135,7 +138,9 @@ svg { display: block; }
 .track-meterbar { flex: 1; height: 4px; border-radius: 2px; background: #222229; overflow: hidden; margin-left: 2px; }
 .track-meterbar > div { height: 100%; border-radius: 2px; }
 .lane { flex: none; position: relative; cursor: pointer; }
-.clip { position: absolute; top: 6px; bottom: 6px; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
+.lane.drop-target { background: rgba(163, 116, 245, 0.08); box-shadow: inset 0 0 0 1px rgba(163, 116, 245, 0.25); }
+.clip { position: absolute; top: 6px; bottom: 6px; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; cursor: grab; z-index: 2; }
+.clip:active { cursor: grabbing; }
 .clip-head { height: 16px; flex: none; display: flex; align-items: center; padding: 0 7px; }
 .clip-head span { font-size: 10px; font-weight: 600; color: #15151a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clip-body { flex: 1; background-size: 100% 60%; background-repeat: no-repeat; background-position: center; margin: 5px 6px; }

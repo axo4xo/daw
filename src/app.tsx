@@ -9,8 +9,7 @@ const Boot = () => {
     createEffect(() => {
         if (studio.state.phase === "ready" && !seeded) {
             seeded = true
-            studio.loadDemo()
-            for (let index = 0; index < 5; index++) studio.addTrack("Vaporisateur")
+            for (let index = 0; index < 6; index++) studio.addTrack("Vaporisateur")
         }
     })
     return <Looper/>

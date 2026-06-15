@@ -1,17 +1,55 @@
-import {createEffect, createSignal, For, type JSX, onCleanup, onMount, Show} from "solid-js"
+import {createEffect, createSignal, For, type JSX, onCleanup, onMount, Show, untrack} from "solid-js"
 import {useStudio} from "../studio"
 import type {MixerTrack} from "../engine"
+import {Clip} from "./Clip"
 import {browserItems, browserSamples, devices, NEUTRAL, palette, waveBars, waveform} from "./decor"
 
 type View = "arrange" | "mix"
 type Bottom = "sample" | "effects"
+type ArrangedClip = {
+    id: string
+    trackUuid: string
+    title: string
+    startBar: number
+    lengthBars: number
+    color: string
+    buffer?: AudioBuffer
+    loading?: boolean
+}
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
 
 // Timeline zoom state — module-level so it persists across Arrange/Mix switches.
 const TOTAL_BARS = 400
+const BEATS_PER_BAR = 4
+const SAMPLE_CLIP_BARS = 1
+const SAMPLE_MIME = "application/x-daw-sample"
+const CLIP_MIME = "application/x-daw-clip"
+const CLIP_OFFSET_MIME = "application/x-daw-clip-offset-bars"
+const TEXT_MIME = "text/plain"
 const [pxPerBar, setPxPerBar] = createSignal(64)
 const [trackHeight, setTrackHeight] = createSignal(72)
+
+const snapBar = (value: number): number => Math.round(value * BEATS_PER_BAR) / BEATS_PER_BAR
+const hasDragData = (data: DataTransfer, type: string): boolean => Array.from(data.types).includes(type)
+const hasFiles = (data: DataTransfer): boolean => data.files.length > 0 || hasDragData(data, "Files")
+const dragText = (data: DataTransfer): string => data.getData(TEXT_MIME).trim()
+const dragNumber = (data: DataTransfer, type: string): number => {
+    const value = Number.parseFloat(data.getData(type))
+    return Number.isFinite(value) ? value : 0
+}
+const readSampleDrag = (data: DataTransfer): string => {
+    const sample = data.getData(SAMPLE_MIME).trim()
+    const text = dragText(data)
+    if (sample !== "") return sample
+    return text.startsWith("sample:") ? text.slice("sample:".length).trim() : ""
+}
+const readClipDrag = (data: DataTransfer): string => {
+    const clipId = data.getData(CLIP_MIME).trim()
+    const text = dragText(data)
+    if (clipId !== "") return clipId
+    return text.startsWith("clip:") ? text.slice("clip:".length).trim() : ""
+}
 
 const panText = (pan: number): string => {
     if (Math.abs(pan) < 0.01) return "C"
@@ -176,7 +214,15 @@ const Browser = () => (
             <div class="browser-group">
                 <div class="browser-group-label">Drums · 808 Kit</div>
                 <For each={browserSamples}>{sample => (
-                    <div class="sample-row">
+                    <div class="sample-row" draggable
+                         onDragStart={event => {
+                             const data = event.dataTransfer
+                             if (data === null) return
+                             data.effectAllowed = "copy"
+                             data.setData(SAMPLE_MIME, sample)
+                             data.setData(CLIP_OFFSET_MIME, "0")
+                             data.setData(TEXT_MIME, `sample:${sample}`)
+                         }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
                         <span>{sample}</span>
                     </div>
@@ -263,9 +309,149 @@ const ArrangeView = () => {
     let scroller: HTMLDivElement | undefined
     let canvas: HTMLCanvasElement | undefined
     let raf = 0
+    let sampleContext: AudioContext | undefined
+    let scheduledSources: AudioBufferSourceNode[] = []
+    const [clips, setClips] = createSignal<ReadonlyArray<ArrangedClip>>([])
+    const [dropTrack, setDropTrack] = createSignal("")
     const channels = (): ReadonlyArray<MixerTrack> => state.tracks.filter(track => track.type !== "output")
     const laneWidth = (): string => `${TOTAL_BARS * pxPerBar()}px`
     const playheadLanePx = (): number => state.pulsesPerBar > 0 ? (state.position / state.pulsesPerBar) * pxPerBar() : 0
+    const clipsFor = (trackUuid: string): ReadonlyArray<ArrangedClip> => clips().filter(clip => clip.trackUuid === trackUuid)
+    const acceptsTimelineDrop = (data: DataTransfer): boolean =>
+        hasDragData(data, SAMPLE_MIME) || hasDragData(data, CLIP_MIME) || hasDragData(data, TEXT_MIME) || hasFiles(data)
+    const secondsPerBar = (): number => state.bpm > 0 ? (60 / state.bpm) * BEATS_PER_BAR : 2
+    const ensureSampleContext = (): AudioContext => {
+        if (sampleContext === undefined) sampleContext = new AudioContext()
+        return sampleContext
+    }
+    const stopSamples = (): void => {
+        scheduledSources.forEach(source => {
+            try { source.stop() } catch { /* already stopped */ }
+        })
+        scheduledSources = []
+    }
+    const scheduleSamples = async (snapshot: ReadonlyArray<ArrangedClip>, tracks: ReadonlyArray<MixerTrack>, position: number): Promise<void> => {
+        stopSamples()
+        const context = ensureSampleContext()
+        await context.resume()
+        const perBar = state.pulsesPerBar
+        if (perBar <= 0) return
+        const currentBar = position / perBar
+        const barSeconds = secondsPerBar()
+        const soloActive = tracks.some(track => track.solo)
+        snapshot.forEach(clip => {
+            if (clip.buffer === undefined) return
+            const track = tracks.find(item => item.uuid === clip.trackUuid)
+            if (track === undefined || track.mute || (soloActive && !track.solo)) return
+            const clipEnd = clip.startBar + clip.lengthBars
+            if (clipEnd <= currentBar) return
+            const source = context.createBufferSource()
+            const gain = context.createGain()
+            const panner = context.createStereoPanner()
+            const offsetBars = Math.max(0, currentBar - clip.startBar)
+            const offsetSeconds = offsetBars * barSeconds
+            const clipDurationSeconds = clip.lengthBars * barSeconds
+            const remainingSeconds = Math.min(clip.buffer.duration - offsetSeconds, clipDurationSeconds - offsetSeconds)
+            if (remainingSeconds <= 0) return
+            source.buffer = clip.buffer
+            gain.gain.value = track.volume
+            panner.pan.value = clamp(track.pan, -1, 1)
+            source.connect(gain).connect(panner).connect(context.destination)
+            source.onended = () => { scheduledSources = scheduledSources.filter(item => item !== source) }
+            source.start(context.currentTime + Math.max(0, (clip.startBar - currentBar) * barSeconds), offsetSeconds, remainingSeconds)
+            scheduledSources.push(source)
+        })
+    }
+    const decodeFileClip = async (id: string, file: File): Promise<void> => {
+        const context = ensureSampleContext()
+        await context.resume()
+        const buffer = await context.decodeAudioData(await file.arrayBuffer())
+        setClips(current => current.map(clip => {
+            if (clip.id !== id) return clip
+            return {...clip, buffer, loading: false, lengthBars: Math.max(0.25, snapBar(buffer.duration / secondsPerBar()))}
+        }))
+    }
+    const timelineDrop = (clientX: number, clientY: number, offsetBars: number, lengthBars: number): {track: MixerTrack; startBar: number} | undefined => {
+        if (scroller === undefined) return undefined
+        const rect = scroller.getBoundingClientRect()
+        const x = clientX - rect.left + scroller.scrollLeft - HEADER_W
+        const y = clientY - rect.top + scroller.scrollTop - RULER_H
+        const index = Math.floor(y / trackHeight())
+        const track = channels()[index]
+        if (track === undefined || x < 0 || y < 0) return undefined
+        const raw = x / pxPerBar() - offsetBars
+        return {track, startBar: clamp(snapBar(raw), 0, TOTAL_BARS - lengthBars)}
+    }
+    const trackAt = (clientY: number): MixerTrack | undefined => {
+        if (scroller === undefined) return undefined
+        const rect = scroller.getBoundingClientRect()
+        const y = clientY - rect.top + scroller.scrollTop - RULER_H
+        return y >= 0 ? channels()[Math.floor(y / trackHeight())] : undefined
+    }
+    const onTimelineDragOver = (event: DragEvent & {currentTarget: HTMLDivElement}): void => {
+        const data = event.dataTransfer
+        if (data === null || !acceptsTimelineDrop(data)) return
+        const track = trackAt(event.clientY)
+        if (track === undefined) return
+        event.preventDefault()
+        data.dropEffect = hasDragData(data, CLIP_MIME) || dragText(data).startsWith("clip:") ? "move" : "copy"
+        setDropTrack(track.uuid)
+    }
+    const onTimelineDrop = (event: DragEvent & {currentTarget: HTMLDivElement}): void => {
+        const data = event.dataTransfer
+        if (data === null || !acceptsTimelineDrop(data)) return
+        event.preventDefault()
+        event.stopPropagation()
+        setDropTrack("")
+        const clipId = readClipDrag(data)
+        const offsetBars = dragNumber(data, CLIP_OFFSET_MIME)
+        if (clipId !== "") {
+            const currentClip = clips().find(clip => clip.id === clipId)
+            if (currentClip === undefined) return
+            const drop = timelineDrop(event.clientX, event.clientY, offsetBars, currentClip.lengthBars)
+            if (drop === undefined) return
+            const ord = studio.ordinalOf(drop.track.uuid)
+            const color = palette[(ord - 1) % palette.length]
+            studio.select(drop.track.uuid)
+            setClips(current => current.map(clip => clip.id === clipId
+                ? {...clip, trackUuid: drop.track.uuid, color, startBar: drop.startBar}
+                : clip))
+            return
+        }
+        const files = Array.from(data.files)
+        const names = files.length > 0 ? files.map(file => file.name) : [readSampleDrag(data)].filter(name => name !== "")
+        names.forEach((name, index) => {
+            const drop = timelineDrop(event.clientX, event.clientY, offsetBars + index * SAMPLE_CLIP_BARS, SAMPLE_CLIP_BARS)
+            if (drop === undefined) return
+            const ord = studio.ordinalOf(drop.track.uuid)
+            const color = palette[(ord - 1) % palette.length]
+            const id = crypto.randomUUID()
+            const file = files[index]
+            studio.select(drop.track.uuid)
+            setClips(current => [...current, {
+                id,
+                trackUuid: drop.track.uuid,
+                title: name,
+                startBar: drop.startBar,
+                lengthBars: SAMPLE_CLIP_BARS,
+                color,
+                loading: file !== undefined
+            }])
+            if (file !== undefined) void decodeFileClip(id, file).catch(() => {
+                setClips(current => current.map(clip => clip.id === id ? {...clip, title: `${clip.title} (decode failed)`, loading: false} : clip))
+            })
+        })
+    }
+    const onClipDragStart = (clip: ArrangedClip, event: DragEvent & {currentTarget: HTMLDivElement}): void => {
+        const data = event.dataTransfer
+        if (data === null) return
+        event.stopPropagation()
+        const rect = event.currentTarget.getBoundingClientRect()
+        data.effectAllowed = "move"
+        data.setData(CLIP_MIME, clip.id)
+        data.setData(CLIP_OFFSET_MIME, String((event.clientX - rect.left) / pxPerBar()))
+        data.setData(TEXT_MIME, `clip:${clip.id}`)
+    }
     const barLabels = (): number[] => {
         const step = pxPerBar() >= 48 ? 1 : pxPerBar() >= 24 ? 2 : 4
         const labels: number[] = []
@@ -277,7 +463,9 @@ const ArrangeView = () => {
         const rect = event.currentTarget.getBoundingClientRect()
         const raw = ((event.clientX - rect.left) / pxPerBar()) * state.pulsesPerBar
         const snap = state.pulsesPerQuarter
-        studio.setPosition(Math.max(0, snap > 0 ? Math.round(raw / snap) * snap : raw))
+        const position = Math.max(0, snap > 0 ? Math.round(raw / snap) * snap : raw)
+        studio.setPosition(position)
+        if (state.playing) void scheduleSamples(clips(), channels(), position)
     }
     // The grid is drawn on a viewport-sized canvas (not CSS): lines stay crisp at any zoom and
     // the 400-bar timeline never builds a 100k-px element. Redraws only on scroll / zoom / resize.
@@ -330,6 +518,18 @@ const ArrangeView = () => {
             setTrackHeight(value => clamp(value * (event.deltaY < 0 ? 1.1 : 0.91), 52, 200))
         }
     }
+    createEffect(() => {
+        const playing = state.playing
+        const bpm = state.bpm
+        const snapshot = clips()
+        const tracks = channels()
+        void bpm
+        if (!playing) {
+            stopSamples()
+            return
+        }
+        void scheduleSamples(snapshot, tracks, untrack(() => state.position))
+    })
     onMount(() => {
         scroller?.addEventListener("scroll", requestDraw, {passive: true})
         scroller?.addEventListener("wheel", onWheel, {passive: false})
@@ -341,14 +541,26 @@ const ArrangeView = () => {
             scroller?.removeEventListener("wheel", onWheel)
             observer.disconnect()
             if (raf !== 0) cancelAnimationFrame(raf)
+            stopSamples()
+            void sampleContext?.close()
         })
     })
-    createEffect(() => { pxPerBar(); trackHeight(); channels().length; requestDraw() })
+    createEffect(() => {
+        const trackIds = channels().map(track => track.uuid)
+        setClips(current => {
+            const next = current.filter(clip => trackIds.includes(clip.trackUuid))
+            return next.length === current.length ? current : next
+        })
+        pxPerBar(); trackHeight(); requestDraw()
+    })
     return (
         <div class="screen">
             <div class="timeline-wrap">
                 <canvas class="grid-canvas" ref={element => { canvas = element }}/>
-                <div class="timeline" ref={element => { scroller = element }}>
+                <div class="timeline" ref={element => { scroller = element }}
+                     onDragOver={onTimelineDragOver}
+                     onDragLeave={() => setDropTrack("")}
+                     onDrop={onTimelineDrop}>
                     <div class="timeline-inner">
                         <div class="ruler-row">
                             <div class="ruler-corner">Tracks</div>
@@ -379,7 +591,21 @@ const ArrangeView = () => {
                                         <button class="track-remove" title="Remove track"
                                                 onClick={event => { event.stopPropagation(); studio.removeTrack(track.uuid) }}>✕</button>
                                     </div>
-                                    <div class="lane" style={{width: laneWidth()}} onClick={seek}/>
+                                     <div class="lane" classList={{"drop-target": dropTrack() === track.uuid}}
+                                          style={{width: laneWidth()}}
+                                          onClick={seek}>
+                                        <For each={clipsFor(track.uuid)}>{clip => (
+                                            <Clip title={clip.title}
+                                                  left={`${clip.startBar * pxPerBar()}px`}
+                                                  width={`${clip.lengthBars * pxPerBar()}px`}
+                                                  color={clip.color}
+                                                  kind="audio"
+                                                  draggable
+                                                  onClick={event => { event.stopPropagation(); studio.select(track.uuid) }}
+                                                  onDragStart={event => onClipDragStart(clip, event)}
+                                                  onDragEnd={() => setDropTrack("")}/>
+                                        )}</For>
+                                    </div>
                                 </div>
                             )
                         }}</For>

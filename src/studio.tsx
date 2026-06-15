@@ -27,7 +27,6 @@ export interface StudioController {
     togglePlay(): void
     stop(): void
     setBpm(value: number): void
-    loadDemo(): void
     addTrack(instrument?: InstrumentKey): void
     select(uuid: string): void
     setPosition(pulses: number): void
@@ -86,7 +85,6 @@ const createController = (): StudioController => {
         togglePlay: () => withStudio(current => state.playing ? current.stop(false) : current.play()),
         stop: () => withStudio(current => current.stop()),
         setBpm: value => withStudio(current => current.setBpm(value)),
-        loadDemo: () => withStudio(current => current.loadDemo()),
         addTrack: instrument => withStudio(current => {
             const uuid = current.mixer.createInstrumentTrack(instrument)
             if (uuid !== undefined) setState("selectedTrack", uuid)
