@@ -1,2 +1,2 @@
 # daw
-An opinionated web-based DAW, simple, intuitive, free
+an opinionated web-based DAW, simple, light, intuitive, free
