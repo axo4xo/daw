@@ -1,4 +1,5 @@
 import {assert, ObservableValue} from "@opendaw/lib-std"
+import {AnimationFrame} from "@opendaw/lib-dom"
 import {Promises} from "@opendaw/lib-runtime"
 import {bpm, PPQN, ppqn} from "@opendaw/lib-dsp"
 import {InstrumentFactories} from "@opendaw/studio-adapters"
@@ -87,6 +88,9 @@ export const createStudio = async (): Promise<Studio> => {
     const audioWorklets = AudioWorklets.get(audioContext)
     const project = Project.new({audioContext, audioWorklets, sampleManager, soundfontManager, sampleService, soundfontService})
     project.startAudioWorklet()
+    // Drives the worklet→main state pump (position/isPlaying/bpm/cpu live updates).
+    // The worklet registers via AnimationFrame.add(); without start() it never ticks.
+    AnimationFrame.start(window)
     await project.engine.isReady()
     const {engine, editing, api} = project
     return {

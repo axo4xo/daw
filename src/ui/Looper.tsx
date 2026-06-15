@@ -26,11 +26,13 @@ const Knob = (props: {size: number; indicator: number; rotation: string; accent:
 )
 
 // Interactive vertical fader (0..1). Drag up/down.
-const Fader = (props: {value: number; meter: number; onChange: (value: number) => void}) => {
+const Fader = (props: {value: number; live: boolean; delay: string; onChange: (value: number) => void}) => {
     let active = false, startY = 0, startValue = 0
     return (
         <div class="fader-area">
-            <div class="fader-meter"><div style={{height: `${Math.round(props.meter * 100)}%`}}/></div>
+            <div class="fader-meter">
+                <div classList={{vu: props.live}} style={{height: props.live ? "85%" : "6%", "animation-delay": props.delay}}/>
+            </div>
             <div class="fader-track"
                  onPointerDown={event => { active = true; startY = event.clientY; startValue = props.value; event.currentTarget.setPointerCapture(event.pointerId) }}
                  onPointerMove={event => { if (active) props.onChange(clamp(startValue + (startY - event.clientY) / event.currentTarget.clientHeight, 0, 1)) }}
@@ -146,7 +148,10 @@ const Transport = () => {
                 </div>
             </div>
             <div class="tright">
-                <div class="meter-mini"><span style={{height: "60%"}}/><span style={{height: "78%"}}/></div>
+                <div class="meter-mini">
+                    <span classList={{vu: state.playing}} style={{height: "60%"}}/>
+                    <span classList={{vu: state.playing}} style={{height: "78%", "animation-delay": "0.15s"}}/>
+                </div>
                 <div class="cpu">
                     <span class="cpu-val">{state.phase === "ready" ? `${Math.round(state.cpu * 100)}%` : "—"}</span>
                     <span class="ro-label">CPU</span>
@@ -244,48 +249,61 @@ const ClipDetail = () => {
     )
 }
 
-const ArrangeView = (props: {playheadLeft: string}) => (
-    <div class="screen">
-        <div class="ruler">
-            <div class="ruler-head">Tracks</div>
-            <div class="ruler-bars">
-                <For each={rulerBars}>{bar => <div class="ruler-bar" style={{left: `${((bar - 1) / 32) * 100}%`}}>{bar}</div>}</For>
-                <div class="ruler-ph" style={{left: props.playheadLeft}}/>
+const ArrangeView = (props: {playheadLeft: string}) => {
+    const studio = useStudio()
+    const state = studio.state
+    const channels = (): ReadonlyArray<MixerTrack> => state.tracks.filter(track => track.type !== "output")
+    return (
+        <div class="screen">
+            <div class="ruler">
+                <div class="ruler-head">Tracks</div>
+                <div class="ruler-bars">
+                    <For each={rulerBars}>{bar => <div class="ruler-bar" style={{left: `${((bar - 1) / 32) * 100}%`}}>{bar}</div>}</For>
+                    <div class="ruler-ph" style={{left: props.playheadLeft}}/>
+                </div>
             </div>
-        </div>
-        <div class="lanes">
-            <For each={decorTracks}>{track => (
-                <div class="lane-row">
-                    <div class="track-head">
-                        <span class="track-color" style={{background: NEUTRAL}}/>
-                        <div class="track-meta">
-                            <span class="track-name">{track.name}</span>
-                            <div class="track-ctl">
-                                <span class="ms m">M</span>
-                                <span class="ms s">S</span>
-                                <div class="track-meterbar"><div style={{width: `${track.meter * 100}%`, background: track.accent}}/></div>
+            <div class="lanes">
+                <For each={channels()}>{(track, index) => {
+                    const accent = palette[index() % palette.length]
+                    const clips = decorTracks[index() % decorTracks.length].clips
+                    const live = (): boolean => state.playing && !track.mute
+                    return (
+                        <div class="lane-row">
+                            <div class="track-head">
+                                <span class="track-color" style={{background: NEUTRAL}}/>
+                                <div class="track-meta">
+                                    <span class="track-name">Track {index() + 1}</span>
+                                    <div class="track-ctl">
+                                        <span class="ms m" classList={{on: track.mute}} onClick={() => studio.toggleMute(track.uuid)}>M</span>
+                                        <span class="ms s" classList={{on: track.solo}} onClick={() => studio.toggleSolo(track.uuid)}>S</span>
+                                        <div class="track-meterbar">
+                                            <div classList={{vu: live()}} style={{width: live() ? "80%" : "10%", background: accent, "animation-delay": `${index() * 0.1}s`}}/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="lane">
+                                <For each={clips}>{clip => (
+                                    <div class="clip" style={{left: `${clip.left}%`, width: `${clip.width}%`,
+                                        background: hexA(clip.color, 0.15), border: `1px solid ${hexA(clip.color, 0.55)}`}}>
+                                        <div class="clip-head" style={{background: hexA(clip.color, 0.42)}}><span>{clip.title}</span></div>
+                                        <div class="clip-body" style={{"background-image": clip.kind === "audio" ? AUDIO_PATTERN : MIDI_PATTERN}}/>
+                                    </div>
+                                )}</For>
+                                <div class="lane-ph" style={{left: props.playheadLeft}}/>
                             </div>
                         </div>
-                    </div>
-                    <div class="lane">
-                        <For each={track.clips}>{clip => (
-                            <div class="clip" style={{left: `${clip.left}%`, width: `${clip.width}%`,
-                                background: hexA(clip.color, 0.15), border: `1px solid ${hexA(clip.color, 0.55)}`}}>
-                                <div class="clip-head" style={{background: hexA(clip.color, 0.42)}}><span>{clip.title}</span></div>
-                                <div class="clip-body" style={{"background-image": clip.kind === "audio" ? AUDIO_PATTERN : MIDI_PATTERN}}/>
-                            </div>
-                        )}</For>
-                        <div class="lane-ph" style={{left: props.playheadLeft}}/>
-                    </div>
-                </div>
-            )}</For>
+                    )
+                }}</For>
+            </div>
+            <ClipDetail/>
         </div>
-        <ClipDetail/>
-    </div>
-)
+    )
+}
 
-const ChannelStrip = (props: {name: string; track: MixerTrack; accent: string}) => {
+const ChannelStrip = (props: {name: string; track: MixerTrack; accent: string; index: number}) => {
     const studio = useStudio()
+    const live = (): boolean => studio.state.playing && !props.track.mute
     return (
         <div class="strip">
             <div class="strip-name" style={{"border-color": props.accent}}>{props.name}</div>
@@ -295,7 +313,7 @@ const ChannelStrip = (props: {name: string; track: MixerTrack; accent: string}) 
                 <div class="send"><div class="send-knob"/><span class="send-label">A</span></div>
                 <div class="send"><div class="send-knob"/><span class="send-label">B</span></div>
             </div>
-            <Fader value={props.track.volume} meter={props.track.volume}
+            <Fader value={props.track.volume} live={live()} delay={`${props.index * 0.1}s`}
                    onChange={value => studio.setVolume(props.track.uuid, value)}/>
             <span class="strip-vol">{props.track.volumeText}</span>
             <div class="strip-btns">
@@ -314,7 +332,7 @@ const MasterStrip = (props: {track: MixerTrack}) => {
             <div class="strip-name">Master</div>
             <PanKnob value={props.track.pan} accent="#b388ff" onChange={value => studio.setPan(props.track.uuid, value)}/>
             <span class="strip-pan">{panText(props.track.pan)}</span>
-            <Fader value={props.track.volume} meter={props.track.volume}
+            <Fader value={props.track.volume} live={studio.state.playing} delay="0s"
                    onChange={value => studio.setVolume(props.track.uuid, value)}/>
             <span class="strip-vol">{props.track.volumeText}</span>
         </div>
@@ -328,7 +346,7 @@ const MixView = () => {
     return (
         <div class="mix">
             <For each={channels()}>
-                {(track, index) => <ChannelStrip name={`Track ${index() + 1}`} track={track} accent={palette[index() % palette.length]}/>}
+                {(track, index) => <ChannelStrip name={`Track ${index() + 1}`} index={index()} track={track} accent={palette[index() % palette.length]}/>}
             </For>
             <Show when={master()}>{value => <MasterStrip track={value()}/>}</Show>
         </div>

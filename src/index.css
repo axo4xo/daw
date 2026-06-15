@@ -190,5 +190,12 @@ svg { display: block; }
 .sbtn.s.on { background: #b7d96a; border-color: #b7d96a; color: #15240a; }
 .fader-track, .knob { touch-action: none; cursor: ns-resize; }
 
+/* Animated meter placeholders — alive on playback (not real PPM yet). */
+@keyframes vuY { 0% { transform: scaleY(0.45); } 30% { transform: scaleY(0.9); } 55% { transform: scaleY(0.6); } 80% { transform: scaleY(1); } 100% { transform: scaleY(0.5); } }
+@keyframes vuX { 0% { transform: scaleX(0.5); } 30% { transform: scaleX(0.95); } 60% { transform: scaleX(0.65); } 100% { transform: scaleX(0.55); } }
+.fader-meter > div { transition: height 0.15s ease; }
+.fader-meter > div.vu, .meter-mini > span.vu { transform-origin: bottom; animation: vuY 0.55s ease-in-out infinite; }
+.track-meterbar > div.vu { transform-origin: left; animation: vuX 0.5s ease-in-out infinite; }
+
 .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--t7); font-size: 13px; }
 .errbar { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(224, 85, 106, 0.14); border: 1px solid rgba(224, 85, 106, 0.4); color: var(--red); padding: 6px 12px; border-radius: 8px; font-size: 12px; }
