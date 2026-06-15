@@ -10,7 +10,12 @@ An opinionated, free, web-based multiplatform DAW (Digital Audio Workstation) �
 
 ## Current state (read this first)
 
-This is a **greenfield repository**. As of now it contains only `README.md` — there is **no application code, no `package.json`, and no build tooling yet**. Do not waste time searching for source that does not exist. The stack and architecture below are **decided**, not yet scaffolded; the first substantial task is to bootstrap the project (see *Bootstrapping*).
+The **SolidJS + Vite + TypeScript shell is scaffolded and runs** (`bun run dev`; typecheck and build are green). What exists:
+- A working UI shell — transport bar (play/stop/BPM/position), track list, a Canvas timeline with a moving playhead, and a mixer with faders/pan/meters.
+- App state lives in a small Solid store at `src/state/project.ts`. This is a **temporary stand-in** for the engine's BoxGraph (see *Architecture*) — playback, the playhead, and meters are UI-driven placeholders, not real audio.
+- The engine boundary `src/engine/studio.ts` is a **documented no-op stub**. The openDAW SDK is **not installed or wired yet**.
+
+**Next step:** add `@opendaw/studio-sdk`, read its real types from `node_modules`, implement `createStudio()` against them (the stub already documents the init sequence), then migrate the source of truth from the Solid store onto the engine's project model.
 
 ## Tech stack (decided)
 
