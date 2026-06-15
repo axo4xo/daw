@@ -1,12 +1,17 @@
-import {createSignal, For, type JSX, onCleanup, onMount, Show} from "solid-js"
+import {createEffect, createSignal, For, type JSX, onCleanup, onMount, Show} from "solid-js"
 import {useStudio} from "../studio"
 import type {MixerTrack} from "../engine"
-import {browserItems, browserSamples, devices, NEUTRAL, palette, rulerBars, waveBars, waveform} from "./decor"
+import {browserItems, browserSamples, devices, NEUTRAL, palette, waveBars, waveform} from "./decor"
 
 type View = "arrange" | "mix"
 type Bottom = "sample" | "effects"
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
+
+// Timeline zoom state — module-level so it persists across Arrange/Mix switches.
+const TOTAL_BARS = 400
+const [pxPerBar, setPxPerBar] = createSignal(64)
+const [trackHeight, setTrackHeight] = createSignal(72)
 
 const panText = (pan: number): string => {
     if (Math.abs(pan) < 0.01) return "C"
@@ -252,55 +257,138 @@ const ClipDetail = () => {
     )
 }
 
-const ArrangeView = (props: {playheadLeft: string}) => {
+const ArrangeView = () => {
     const studio = useStudio()
     const state = studio.state
+    let scroller: HTMLDivElement | undefined
+    let canvas: HTMLCanvasElement | undefined
+    let raf = 0
     const channels = (): ReadonlyArray<MixerTrack> => state.tracks.filter(track => track.type !== "output")
-    // Seek the playhead to the clicked position. The visible span is 32 bars (matches the ruler/playhead math).
+    const laneWidth = (): string => `${TOTAL_BARS * pxPerBar()}px`
+    const playheadLanePx = (): number => state.pulsesPerBar > 0 ? (state.position / state.pulsesPerBar) * pxPerBar() : 0
+    const barLabels = (): number[] => {
+        const step = pxPerBar() >= 48 ? 1 : pxPerBar() >= 24 ? 2 : 4
+        const labels: number[] = []
+        for (let bar = 1; bar <= TOTAL_BARS; bar += step) labels.push(bar)
+        return labels
+    }
+    // Click to move the playhead, snapped to the nearest beat.
     const seek = (event: MouseEvent & {currentTarget: HTMLElement}): void => {
         const rect = event.currentTarget.getBoundingClientRect()
-        const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
-        studio.setPosition(fraction * 32 * state.pulsesPerBar)
+        const raw = ((event.clientX - rect.left) / pxPerBar()) * state.pulsesPerBar
+        const snap = state.pulsesPerQuarter
+        studio.setPosition(Math.max(0, snap > 0 ? Math.round(raw / snap) * snap : raw))
     }
+    // The grid is drawn on a viewport-sized canvas (not CSS): lines stay crisp at any zoom and
+    // the 400-bar timeline never builds a 100k-px element. Redraws only on scroll / zoom / resize.
+    const HEADER_W = 176
+    const RULER_H = 30
+    const draw = (): void => {
+        if (canvas === undefined || scroller === undefined) return
+        const ctx = canvas.getContext("2d")
+        if (ctx === null) return
+        const dpr = window.devicePixelRatio || 1
+        const w = canvas.clientWidth
+        const h = canvas.clientHeight
+        if (canvas.width !== Math.floor(w * dpr)) canvas.width = Math.floor(w * dpr)
+        if (canvas.height !== Math.floor(h * dpr)) canvas.height = Math.floor(h * dpr)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, w, h)
+        const ppb = pxPerBar()
+        // Grid spans only the tracks — not the empty area / add-track row below them.
+        const gridH = Math.max(0, Math.min(h, RULER_H + channels().length * trackHeight() - scroller.scrollTop) - RULER_H)
+        const scrollLeft = scroller.scrollLeft
+        const firstBar = Math.max(1, Math.floor(scrollLeft / ppb) + 1)
+        const lastBar = Math.min(TOTAL_BARS, Math.floor((scrollLeft + w - HEADER_W) / ppb) + 1)
+        for (let bar = firstBar; bar <= lastBar; bar++) {
+            const barX = HEADER_W + (bar - 1) * ppb - scrollLeft
+            if (bar % 2 === 0) {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.018)"
+                const x0 = Math.max(HEADER_W, barX)
+                const x1 = Math.min(w, barX + ppb)
+                if (x1 > x0) ctx.fillRect(x0, RULER_H, x1 - x0, gridH)
+            }
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)"
+            for (let beat = 1; beat < 4; beat++) {
+                const beatX = Math.round(barX + (beat * ppb) / 4)
+                if (beatX >= HEADER_W && beatX <= w) ctx.fillRect(beatX, RULER_H, 1, gridH)
+            }
+            const lineX = Math.round(barX)
+            if (lineX >= HEADER_W && lineX <= w) {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.16)"
+                ctx.fillRect(lineX, RULER_H, 1, gridH)
+            }
+        }
+    }
+    const requestDraw = (): void => { if (raf === 0) raf = requestAnimationFrame(() => { raf = 0; draw() }) }
+    const onWheel = (event: WheelEvent): void => {
+        if (event.ctrlKey) {
+            event.preventDefault()
+            setPxPerBar(value => Math.round(clamp(value * (event.deltaY < 0 ? 1.12 : 0.89), 16, 320) / 4) * 4)
+        } else if (event.altKey) {
+            event.preventDefault()
+            setTrackHeight(value => clamp(value * (event.deltaY < 0 ? 1.1 : 0.91), 52, 200))
+        }
+    }
+    onMount(() => {
+        scroller?.addEventListener("scroll", requestDraw, {passive: true})
+        scroller?.addEventListener("wheel", onWheel, {passive: false})
+        const observer = new ResizeObserver(requestDraw)
+        if (canvas !== undefined) observer.observe(canvas)
+        requestDraw()
+        onCleanup(() => {
+            scroller?.removeEventListener("scroll", requestDraw)
+            scroller?.removeEventListener("wheel", onWheel)
+            observer.disconnect()
+            if (raf !== 0) cancelAnimationFrame(raf)
+        })
+    })
+    createEffect(() => { pxPerBar(); trackHeight(); channels().length; requestDraw() })
     return (
         <div class="screen">
-            <div class="ruler">
-                <div class="ruler-head">Tracks</div>
-                <div class="ruler-bars" onClick={seek}>
-                    <For each={rulerBars}>{bar => <div class="ruler-bar" style={{left: `${((bar - 1) / 32) * 100}%`}}>{bar}</div>}</For>
-                    <div class="ruler-ph" style={{left: props.playheadLeft}}/>
-                </div>
-            </div>
-            <div class="lanes">
-                <For each={channels()}>{track => {
-                    const ord = studio.ordinalOf(track.uuid)
-                    const accent = palette[(ord - 1) % palette.length]
-                    const live = (): boolean => state.playing && !track.mute
-                    return (
-                        <div class="lane-row">
-                            <div class="track-head" classList={{selected: state.selectedTrack === track.uuid}}
-                                 onClick={() => studio.select(track.uuid)}>
-                                <span class="track-color" style={{background: NEUTRAL}}/>
-                                <div class="track-meta">
-                                    <span class="track-name">Track {ord}</span>
-                                    <div class="track-ctl">
-                                        <span class="ms m" classList={{on: track.mute}} onClick={() => studio.toggleMute(track.uuid)}>M</span>
-                                        <span class="ms s" classList={{on: track.solo}} onClick={() => studio.toggleSolo(track.uuid)}>S</span>
-                                        <div class="track-meterbar">
-                                            <div classList={{vu: live()}} style={{width: live() ? "80%" : "10%", background: accent, "animation-delay": `${ord * 0.1}s`}}/>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button class="track-remove" title="Remove track"
-                                        onClick={event => { event.stopPropagation(); studio.removeTrack(track.uuid) }}>✕</button>
-                            </div>
-                            <div class="lane" onClick={seek}>
-                                <div class="lane-ph" style={{left: props.playheadLeft}}/>
+            <div class="timeline-wrap">
+                <canvas class="grid-canvas" ref={element => { canvas = element }}/>
+                <div class="timeline" ref={element => { scroller = element }}>
+                    <div class="timeline-inner">
+                        <div class="ruler-row">
+                            <div class="ruler-corner">Tracks</div>
+                            <div class="ruler-bars" style={{width: laneWidth()}} onClick={seek}>
+                                <For each={barLabels()}>{bar => <div class="ruler-bar" style={{left: `${(bar - 1) * pxPerBar()}px`}}>{bar}</div>}</For>
+                                <div class="ruler-ph" style={{left: `${playheadLanePx()}px`}}/>
                             </div>
                         </div>
-                    )
-                }}</For>
-                <button class="add-track-row" onClick={() => studio.addTrack("Vaporisateur")}>+ Add Track</button>
+                        <For each={channels()}>{track => {
+                            const ord = studio.ordinalOf(track.uuid)
+                            const accent = palette[(ord - 1) % palette.length]
+                            const live = (): boolean => state.playing && !track.mute
+                            return (
+                                <div class="lane-row" style={{height: `${trackHeight()}px`}}>
+                                    <div class="track-head" classList={{selected: state.selectedTrack === track.uuid}}
+                                         onClick={() => studio.select(track.uuid)}>
+                                        <span class="track-color" style={{background: NEUTRAL}}/>
+                                        <div class="track-meta">
+                                            <span class="track-name">Track {ord}</span>
+                                            <div class="track-ctl">
+                                                <span class="ms m" classList={{on: track.mute}} onClick={() => studio.toggleMute(track.uuid)}>M</span>
+                                                <span class="ms s" classList={{on: track.solo}} onClick={() => studio.toggleSolo(track.uuid)}>S</span>
+                                                <div class="track-meterbar">
+                                                    <div classList={{vu: live()}} style={{width: live() ? "80%" : "10%", background: accent, "animation-delay": `${ord * 0.1}s`}}/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button class="track-remove" title="Remove track"
+                                                onClick={event => { event.stopPropagation(); studio.removeTrack(track.uuid) }}>✕</button>
+                                    </div>
+                                    <div class="lane" style={{width: laneWidth()}} onClick={seek}/>
+                                </div>
+                            )
+                        }}</For>
+                        <div class="lane-row">
+                            <button class="add-track-row" onClick={() => studio.addTrack("Vaporisateur")}>+ Add Track</button>
+                        </div>
+                        <div class="playhead" style={{left: `${HEADER_W + playheadLanePx()}px`, height: `${channels().length * trackHeight()}px`}}/>
+                    </div>
+                </div>
             </div>
             <ClipDetail/>
         </div>
@@ -369,10 +457,6 @@ export const Looper = () => {
     const studio = useStudio()
     const state = studio.state
     const [view, setView] = createSignal<View>("arrange")
-    const playheadLeft = (): string =>
-        state.pulsesPerBar > 0
-            ? `${Math.min(100, (state.position / (32 * state.pulsesPerBar)) * 100)}%`
-            : "38%"
     const onKey = (event: KeyboardEvent): void => {
         const target = event.target as HTMLElement
         if (target.tagName === "INPUT" || target.isContentEditable) return
@@ -387,7 +471,7 @@ export const Looper = () => {
             <div class="main">
                 <Browser/>
                 <div class="viewarea">
-                    <Show when={view() === "arrange"}><ArrangeView playheadLeft={playheadLeft()}/></Show>
+                    <Show when={view() === "arrange"}><ArrangeView/></Show>
                     <Show when={view() === "mix"}><MixView/></Show>
                     <Show when={state.phase === "error"}><div class="errbar">Engine failed to start: {state.error}</div></Show>
                 </div>
