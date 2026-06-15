@@ -28,11 +28,13 @@ MVP scope:
 
 Anything past the MVP is open-ended.
 
-## Develop
+## Develop 
+Bun is preferred, but any package manager is basically okay:
 
-Uses [bun](https://bun.sh). `bun install`, then `bun run dev` and open
-http://localhost:8080. The engine isn't wired yet, so playback/meters are
-placeholders for now.
+```bash
+npm install
+npm run dev
+``` 
 
 ## License
 
