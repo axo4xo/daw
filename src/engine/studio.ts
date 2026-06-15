@@ -14,6 +14,7 @@ import {
     SoundfontService,
     Workers
 } from "@opendaw/studio-core"
+import {createMixerApi, MixerApi} from "./mixer"
 import {testFeatures} from "./features"
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
@@ -28,6 +29,7 @@ export interface Studio {
     readonly audioContext: AudioContext
     readonly project: Project
     readonly engine: EngineFacade
+    readonly mixer: MixerApi
     play(): void
     stop(reset?: boolean): void
     setPosition(pulses: ppqn): void
@@ -90,6 +92,7 @@ export const createStudio = async (): Promise<Studio> => {
         audioContext,
         project,
         engine,
+        mixer: createMixerApi(project),
         play: () => { void audioContext.resume(); engine.play() },
         stop: (reset = true) => engine.stop(reset),
         setPosition: pulses => engine.setPosition(pulses),
