@@ -27,19 +27,22 @@ The **SolidJS + Vite + TypeScript shell is scaffolded and runs** (`bun run dev`;
 | Hot/real-time views | **Canvas / WebGL** | Timeline, piano roll, waveforms, meters, automation lanes render to canvas (driven by `requestAnimationFrame`), **not** the DOM/Solid tree. |
 | License | **AGPL-3** | See *Licensing*. |
 
-## Bootstrapping
+## Bootstrapping & commands
 
-The canonical reference for wiring the engine is the official template **`andremichelle/opendaw-headless`** (Vite + TS + `@opendaw/studio-sdk` + `vite-plugin-cross-origin-isolation`). Start from its structure, then add SolidJS on top. Once scaffolded, the expected workflow is the standard Vite one:
+Package manager / runner is **bun**. The dev server runs over **`http://localhost:8080`** — `localhost` is already a secure context and the COOP/COEP headers in `vite.config.ts` enable cross-origin isolation, so **no HTTPS cert / mkcert is needed** for local dev.
 
 ```bash
-npm install
-npm run dev      # vite dev server (HTTPS — see Cross-origin isolation)
-npm run build    # vite build --mode production
+bun install
+bun run dev        # vite dev server on http://localhost:8080
+bun run build      # production build to dist/
+bun run preview    # serve the production build (COOP/COEP headers preserved)
+bun run typecheck  # tsc --noEmit
 ```
 
-- **Node:** use a current version. openDAW's own monorepo requires **Node >= 23**; use Node 22 LTS or newer and bump if the SDK complains.
-- **Local HTTPS:** the engine needs a *secure context* (for `SharedArrayBuffer` and Web MIDI). The template uses `mkcert localhost` to generate a dev certificate. Run `mkcert localhost` once during setup.
-- When adding test/lint tooling (none exists yet), record the exact commands here so future sessions don't have to rediscover them.
+- **Node:** v20+ works; openDAW's own monorepo wants Node >= 23 (this machine has v24).
+- **WSL note:** the project lives on `/mnt/c`, so `bun` here is the *Windows* binary and the dev server binds to Windows `localhost` — open it in a Windows browser, not from inside WSL (curling it from WSL won't connect).
+- The canonical reference for the eventual engine wiring is the template **`andremichelle/opendaw-headless`** (`src/main.ts`).
+- No test/lint tooling yet — record exact commands here when added.
 
 ## Architecture (the big picture)
 
