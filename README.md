@@ -19,7 +19,7 @@ MVP scope:
 
 - [x] Project scaffold
 - [x] UI shell: transport, track list, mixer
-- [ ] Wire the openDAW engine (real audio behind the shell)
+- [x] Wire the openDAW engine (real audio behind the shell)
 - [ ] Multiple audio tracks
 - [ ] Basic mixing: gain, pan, mute / solo
 - [ ] Simple effects

@@ -1,10 +1,7 @@
-import {createSignal, For, type JSX, Show} from "solid-js"
+import {createSignal, For, type JSX, onCleanup, onMount, Show} from "solid-js"
 import {useStudio} from "../studio"
 import type {MixerTrack} from "../engine"
-import {
-    AUDIO_PATTERN, browserItems, browserSamples, decorTracks, devices, hexA,
-    MIDI_PATTERN, NEUTRAL, palette, rulerBars, waveBars, waveform
-} from "./decor"
+import {browserItems, browserSamples, devices, NEUTRAL, palette, rulerBars, waveBars, waveform} from "./decor"
 
 type View = "arrange" | "mix"
 type Bottom = "sample" | "effects"
@@ -185,12 +182,12 @@ const Browser = () => (
 )
 
 const ClipDetail = () => {
-    const state = useStudio().state
+    const studio = useStudio()
+    const state = studio.state
     const [bottom, setBottom] = createSignal<Bottom>("sample")
     const selectedName = (): string => {
-        const channels = state.tracks.filter(track => track.type !== "output")
-        const index = channels.findIndex(track => track.uuid === state.selectedTrack)
-        return index >= 0 ? `Track ${index + 1}` : "—"
+        const ord = studio.ordinalOf(state.selectedTrack)
+        return ord > 0 ? `Track ${ord}` : "—"
     }
     return (
         <div class="clipdetail">
@@ -259,19 +256,25 @@ const ArrangeView = (props: {playheadLeft: string}) => {
     const studio = useStudio()
     const state = studio.state
     const channels = (): ReadonlyArray<MixerTrack> => state.tracks.filter(track => track.type !== "output")
+    // Seek the playhead to the clicked position. The visible span is 32 bars (matches the ruler/playhead math).
+    const seek = (event: MouseEvent & {currentTarget: HTMLElement}): void => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+        studio.setPosition(fraction * 32 * state.pulsesPerBar)
+    }
     return (
         <div class="screen">
             <div class="ruler">
                 <div class="ruler-head">Tracks</div>
-                <div class="ruler-bars">
+                <div class="ruler-bars" onClick={seek}>
                     <For each={rulerBars}>{bar => <div class="ruler-bar" style={{left: `${((bar - 1) / 32) * 100}%`}}>{bar}</div>}</For>
                     <div class="ruler-ph" style={{left: props.playheadLeft}}/>
                 </div>
             </div>
             <div class="lanes">
-                <For each={channels()}>{(track, index) => {
-                    const accent = palette[index() % palette.length]
-                    const clips = decorTracks[index() % decorTracks.length].clips
+                <For each={channels()}>{track => {
+                    const ord = studio.ordinalOf(track.uuid)
+                    const accent = palette[(ord - 1) % palette.length]
                     const live = (): boolean => state.playing && !track.mute
                     return (
                         <div class="lane-row">
@@ -279,26 +282,19 @@ const ArrangeView = (props: {playheadLeft: string}) => {
                                  onClick={() => studio.select(track.uuid)}>
                                 <span class="track-color" style={{background: NEUTRAL}}/>
                                 <div class="track-meta">
-                                    <span class="track-name">Track {index() + 1}</span>
+                                    <span class="track-name">Track {ord}</span>
                                     <div class="track-ctl">
                                         <span class="ms m" classList={{on: track.mute}} onClick={() => studio.toggleMute(track.uuid)}>M</span>
                                         <span class="ms s" classList={{on: track.solo}} onClick={() => studio.toggleSolo(track.uuid)}>S</span>
                                         <div class="track-meterbar">
-                                            <div classList={{vu: live()}} style={{width: live() ? "80%" : "10%", background: accent, "animation-delay": `${index() * 0.1}s`}}/>
+                                            <div classList={{vu: live()}} style={{width: live() ? "80%" : "10%", background: accent, "animation-delay": `${ord * 0.1}s`}}/>
                                         </div>
                                     </div>
                                 </div>
                                 <button class="track-remove" title="Remove track"
                                         onClick={event => { event.stopPropagation(); studio.removeTrack(track.uuid) }}>✕</button>
                             </div>
-                            <div class="lane">
-                                <For each={clips}>{clip => (
-                                    <div class="clip" style={{left: `${clip.left}%`, width: `${clip.width}%`,
-                                        background: hexA(clip.color, 0.15), border: `1px solid ${hexA(clip.color, 0.55)}`}}>
-                                        <div class="clip-head" style={{background: hexA(clip.color, 0.42)}}><span>{clip.title}</span></div>
-                                        <div class="clip-body" style={{"background-image": clip.kind === "audio" ? AUDIO_PATTERN : MIDI_PATTERN}}/>
-                                    </div>
-                                )}</For>
+                            <div class="lane" onClick={seek}>
                                 <div class="lane-ph" style={{left: props.playheadLeft}}/>
                             </div>
                         </div>
@@ -358,7 +354,10 @@ const MixView = () => {
     return (
         <div class="mix">
             <For each={channels()}>
-                {(track, index) => <ChannelStrip name={`Track ${index() + 1}`} index={index()} track={track} accent={palette[index() % palette.length]}/>}
+                {(track, index) => {
+                    const ord = studio.ordinalOf(track.uuid)
+                    return <ChannelStrip name={`Track ${ord}`} index={index()} track={track} accent={palette[(ord - 1) % palette.length]}/>
+                }}
             </For>
             <button class="strip add" onClick={() => studio.addTrack("Vaporisateur")}>+ Track</button>
             <Show when={master()}>{value => <MasterStrip track={value()}/>}</Show>
@@ -367,12 +366,20 @@ const MixView = () => {
 }
 
 export const Looper = () => {
-    const state = useStudio().state
+    const studio = useStudio()
+    const state = studio.state
     const [view, setView] = createSignal<View>("arrange")
     const playheadLeft = (): string =>
         state.pulsesPerBar > 0
             ? `${Math.min(100, (state.position / (32 * state.pulsesPerBar)) * 100)}%`
             : "38%"
+    const onKey = (event: KeyboardEvent): void => {
+        const target = event.target as HTMLElement
+        if (target.tagName === "INPUT" || target.isContentEditable) return
+        if (event.code === "Space") { event.preventDefault(); studio.togglePlay() }
+    }
+    onMount(() => window.addEventListener("keydown", onKey))
+    onCleanup(() => window.removeEventListener("keydown", onKey))
     return (
         <div class="shell">
             <TitleBar view={view()} setView={setView}/>

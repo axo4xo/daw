@@ -30,6 +30,9 @@ export interface StudioController {
     loadDemo(): void
     addTrack(instrument?: InstrumentKey): void
     select(uuid: string): void
+    setPosition(pulses: number): void
+    // Stable 1-based number assigned to a track on first appearance (survives reorders/removals).
+    ordinalOf(uuid: string): number
     setVolume(uuid: string, unitValue: number): void
     setPan(uuid: string, value: number): void
     toggleMute(uuid: string): void
@@ -44,6 +47,9 @@ const createController = (): StudioController => {
     })
     let studio: Studio | undefined
     const subscriptions: Array<() => void> = []
+    const ordinals = new Map<string, number>()
+    let nextOrdinal = 0
+    const ordinalOf = (uuid: string): number => ordinals.get(uuid) ?? 0
     const withStudio = (run: (current: Studio) => void): void => {
         if (studio !== undefined) run(studio)
     }
@@ -62,6 +68,9 @@ const createController = (): StudioController => {
         subscriptions.push(current.onPositionChange(position => setState("position", position)))
         subscriptions.push(current.onCpuLoadChange(cpu => setState("cpu", cpu)))
         subscriptions.push(current.mixer.subscribe(tracks => {
+            tracks.forEach(track => {
+                if (track.type !== "output" && !ordinals.has(track.uuid)) ordinals.set(track.uuid, ++nextOrdinal)
+            })
             setState("tracks", tracks)
             if (!tracks.some(track => track.uuid === state.selectedTrack)) {
                 const first = tracks.find(track => track.type !== "output")
@@ -74,7 +83,7 @@ const createController = (): StudioController => {
     return {
         state,
         start: () => void start(),
-        togglePlay: () => withStudio(current => state.playing ? current.stop() : current.play()),
+        togglePlay: () => withStudio(current => state.playing ? current.stop(false) : current.play()),
         stop: () => withStudio(current => current.stop()),
         setBpm: value => withStudio(current => current.setBpm(value)),
         loadDemo: () => withStudio(current => current.loadDemo()),
@@ -83,6 +92,8 @@ const createController = (): StudioController => {
             if (uuid !== undefined) setState("selectedTrack", uuid)
         }),
         select: uuid => setState("selectedTrack", uuid),
+        setPosition: pulses => withStudio(current => current.setPosition(pulses)),
+        ordinalOf,
         setVolume: (uuid, unitValue) => withStudio(current => current.mixer.setVolume(uuid, unitValue)),
         setPan: (uuid, value) => withStudio(current => current.mixer.setPan(uuid, value)),
         toggleMute: uuid => withStudio(current => {
