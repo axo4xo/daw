@@ -11,11 +11,13 @@ import {
     OpenSoundfontAPI,
     Project,
     SampleService,
+    SampleStorage,
     SoundfontService,
     Workers
 } from "@opendaw/studio-core"
 import {createMixerApi, MixerApi} from "./mixer"
 import {createEffectsApi, EffectsApi} from "./effects"
+import {createSamplesApi, SamplesApi} from "./samples"
 import {testFeatures} from "./features"
 
 import WorkersUrl from "@opendaw/studio-core/workers-main.js?worker&url"
@@ -32,15 +34,18 @@ export interface Studio {
     readonly engine: EngineFacade
     readonly mixer: MixerApi
     readonly effects: EffectsApi
+    readonly samples: SamplesApi
     readonly timebase: {readonly pulsesPerQuarter: number; readonly pulsesPerBar: number}
     play(): void
     stop(reset?: boolean): void
     setPosition(pulses: ppqn): void
     setBpm(value: number): void
+    setLooping(enabled: boolean): void
     onPlayingChange(callback: (playing: boolean) => void): Unsubscribe
     onPositionChange(callback: (pulses: ppqn) => void): Unsubscribe
     onBpmChange(callback: (value: bpm) => void): Unsubscribe
     onCpuLoadChange(callback: (load: number) => void): Unsubscribe
+    onLoopingChange(callback: (enabled: boolean) => void): Unsubscribe
     resumeContext(): Promise<void>
     dispose(): void
 }
@@ -59,8 +64,16 @@ export const createStudio = async (): Promise<Studio> => {
     const audioContext = new AudioContext({latencyHint: 0})
     const worklets = await Promises.tryCatch(AudioWorklets.createFor(audioContext))
     if (worklets.status === "rejected") throw new Error(`worklet init failed: ${String(worklets.error)}`)
+    // Serve user-imported samples (OPFS) back to the engine by uuid, falling back to the
+    // remote stock API for anything not stored locally.
     const sampleManager = new GlobalSampleLoaderManager({
-        fetch: (uuid, progress) => OpenSampleAPI.get().load(uuid, progress)
+        fetch: async (uuid, progress) => {
+            if (await SampleStorage.get().exists(uuid)) {
+                const [audio, , meta] = await SampleStorage.get().load(uuid)
+                return [audio, meta]
+            }
+            return OpenSampleAPI.get().load(uuid, progress)
+        }
     })
     const soundfontManager = new GlobalSoundfontLoaderManager({
         fetch: (uuid, progress) => OpenSoundfontAPI.get().load(uuid, progress)
@@ -80,15 +93,18 @@ export const createStudio = async (): Promise<Studio> => {
         engine,
         mixer: createMixerApi(project),
         effects: createEffectsApi(project),
+        samples: createSamplesApi(project, sampleService),
         timebase: {pulsesPerQuarter: PPQN.Quarter, pulsesPerBar: PPQN.Bar},
         play: () => { void audioContext.resume(); engine.play() },
         stop: (reset = true) => engine.stop(reset),
         setPosition: pulses => engine.setPosition(pulses),
         setBpm: value => { editing.modify(() => api.setBpm(value)) },
+        setLooping: enabled => { editing.modify(() => project.timelineBox.loopArea.enabled.setValue(enabled)) },
         onPlayingChange: callback => onValue(engine.isPlaying, callback),
         onPositionChange: callback => onValue(engine.position, callback),
         onBpmChange: callback => onValue(engine.bpm, callback),
         onCpuLoadChange: callback => onValue(engine.cpuLoad, callback),
+        onLoopingChange: callback => onValue(project.timelineBox.loopArea.enabled, callback),
         resumeContext: () => audioContext.resume(),
         dispose: () => { project.terminate(); void audioContext.close() }
     }

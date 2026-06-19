@@ -69,7 +69,8 @@ svg { display: block; }
 .tbtn.play { width: 42px; background: linear-gradient(145deg, #b388ff, #8159e0); box-shadow: 0 4px 14px rgba(140, 90, 235, 0.4); color: #fff; border: none; }
 .tbtn.on { background: linear-gradient(145deg, #b388ff, #8159e0); color: #fff; border: none; box-shadow: 0 4px 14px rgba(140, 90, 235, 0.4); }
 .tdiv { width: 1px; height: 22px; background: #2c2c34; margin: 0 5px; }
-.tpill { height: 34px; padding: 0 11px; border-radius: 9px; background: var(--vsoft); border: 1px solid var(--vbd); display: flex; align-items: center; gap: 7px; color: #c4a6ff; font-size: 11.5px; font-weight: 600; }
+.tpill { height: 34px; padding: 0 11px; border-radius: 9px; background: var(--vsoft); border: 1px solid var(--vbd); display: flex; align-items: center; gap: 7px; color: #c4a6ff; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.tpill.off { background: #222229; border-color: var(--bd3); color: var(--t4); }
 
 .readouts { display: flex; align-items: center; gap: 22px; }
 .readout { display: flex; flex-direction: column; align-items: center; }
@@ -181,6 +182,15 @@ svg { display: block; }
 .knob-label { font-size: 8.5px; color: var(--t4); text-align: center; white-space: nowrap; }
 .knob-val { font-size: 8.5px; font-family: var(--mono); color: var(--t7); }
 .device-drop { flex: 1; min-width: 200px; border: 1.5px dashed var(--line); border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #4a4a55; font-size: 12px; }
+.device.bypassed { opacity: 0.5; }
+.device-head .dev-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-btn { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; color: var(--t5); flex: none; font-size: 10px; }
+.dev-btn:hover { background: var(--bd3); color: var(--t2); }
+.dev-btn.off { color: var(--t8); }
+.dev-x:hover { background: rgba(224, 85, 106, 0.16); color: var(--red); }
+.device-add { flex: 1; min-width: 200px; position: relative; border: 1.5px dashed var(--line); border-radius: 9px; display: flex; align-items: center; justify-content: center; color: var(--t5); font-size: 12px; font-weight: 600; cursor: pointer; }
+.device-add:hover { border-color: var(--vbd); color: var(--vtext); }
+.device-add select { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 /* Mix */
 .mix { position: absolute; inset: 0; display: flex; align-items: stretch; gap: 8px; padding: 18px; overflow: auto; }

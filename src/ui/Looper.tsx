@@ -1,8 +1,8 @@
-import {createEffect, createSignal, For, type JSX, onCleanup, onMount, Show, untrack} from "solid-js"
+import {createEffect, createSignal, For, Index, type JSX, onCleanup, onMount, Show} from "solid-js"
 import {useStudio} from "../studio"
 import type {MixerTrack} from "../engine"
 import {Clip} from "./Clip"
-import {browserItems, browserSamples, devices, NEUTRAL, palette, waveBars, waveform} from "./decor"
+import {browserItems, browserSamples, NEUTRAL, palette, waveBars, waveform} from "./decor"
 
 type View = "arrange" | "mix"
 type Bottom = "sample" | "effects"
@@ -13,7 +13,7 @@ type ArrangedClip = {
     startBar: number
     lengthBars: number
     color: string
-    buffer?: AudioBuffer
+    regionUuid?: string
     loading?: boolean
 }
 
@@ -29,6 +29,8 @@ const CLIP_OFFSET_MIME = "application/x-daw-clip-offset-bars"
 const TEXT_MIME = "text/plain"
 const [pxPerBar, setPxPerBar] = createSignal(64)
 const [trackHeight, setTrackHeight] = createSignal(72)
+// Module-level so the clip overlay survives Arrange⇄Mix view switches (ArrangeView unmounts).
+const [clips, setClips] = createSignal<ReadonlyArray<ArrangedClip>>([])
 
 const snapBar = (value: number): number => Math.round(value * BEATS_PER_BAR) / BEATS_PER_BAR
 const hasDragData = (data: DataTransfer, type: string): boolean => Array.from(data.types).includes(type)
@@ -57,13 +59,19 @@ const panText = (pan: number): string => {
     return pan < 0 ? `${amount} L` : `${amount} R`
 }
 
-// Display-only knob (device racks).
-const Knob = (props: {size: number; indicator: number; rotation: string; accent: string}) => (
-    <div class="knob" style={{width: `${props.size}px`, height: `${props.size}px`}}>
-        <div class="knob-ind" style={{height: `${props.indicator}px`, background: props.accent,
-            transform: `translate(-50%, -100%) rotate(${props.rotation})`}}/>
-    </div>
-)
+// Interactive effect-parameter knob (unit value 0..1 → -135..135deg). Drag up/down.
+const EffectKnob = (props: {value: number; accent: string; onChange: (value: number) => void}) => {
+    let active = false, startY = 0, startValue = 0
+    return (
+        <div class="knob" style={{width: "30px", height: "30px"}}
+             onPointerDown={event => { active = true; startY = event.clientY; startValue = props.value; event.currentTarget.setPointerCapture(event.pointerId) }}
+             onPointerMove={event => { if (active) props.onChange(clamp(startValue + (startY - event.clientY) / 150, 0, 1)) }}
+             onPointerUp={event => { active = false; event.currentTarget.releasePointerCapture(event.pointerId) }}>
+            <div class="knob-ind" style={{height: "10px", background: props.accent,
+                transform: `translate(-50%, -100%) rotate(${(props.value * 2 - 1) * 135}deg)`}}/>
+        </div>
+    )
+}
 
 // Interactive vertical fader (0..1). Drag up/down.
 const Fader = (props: {value: number; live: boolean; delay: string; onChange: (value: number) => void}) => {
@@ -158,10 +166,10 @@ const Transport = () => {
                 <button class="tbtn" onClick={() => studio.stop()}><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>
                 <div class="tbtn rec"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg></div>
                 <div class="tdiv"/>
-                <div class="tpill">
+                <button class="tpill" classList={{off: !state.looping}} title="Toggle loop" onClick={() => studio.toggleLoop()}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 01-4 4H3"/></svg>
                     Loop
-                </div>
+                </button>
                 <div class="tbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6l4 18H5z"/><line x1="12" y1="14" x2="16" y2="8"/></svg></div>
             </div>
             <div class="readouts">
@@ -232,6 +240,52 @@ const Browser = () => (
     </div>
 )
 
+// Live per-track effect chain, bound to studio.effects (selected track). Replaces the
+// former decor device mocks; cards add/remove/bypass and knobs drive setEffectParam.
+const EffectsRack = () => {
+    const studio = useStudio()
+    const state = studio.state
+    const accentFor = (index: number): string => palette[index % palette.length]
+    return (
+        <div class="devices">
+            <Index each={state.effects}>{(effect, index) => (
+                <div class="device" classList={{bypassed: !effect().enabled}}>
+                    <div class="device-head">
+                        <span class="dot" style={{background: accentFor(index)}}/>
+                        <span class="dev-name">{effect().name}</span>
+                        <button class="dev-btn" classList={{off: !effect().enabled}} title="Bypass"
+                                onClick={() => studio.toggleEffect(effect().uuid)}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18.4 6.6a9 9 0 11-12.8 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                        </button>
+                        <button class="dev-btn dev-x" title="Remove" onClick={() => studio.removeEffect(effect().uuid)}>✕</button>
+                    </div>
+                    <div class="knobgrid">
+                        <Index each={effect().params}>{(param, paramIndex) => (
+                            <div class="knobcell">
+                                <EffectKnob value={param().value} accent={accentFor(index)}
+                                            onChange={value => studio.setEffectParam(effect().uuid, paramIndex, value)}/>
+                                <span class="knob-label">{param().name}</span>
+                                <span class="knob-val">{param().text}</span>
+                            </div>
+                        )}</Index>
+                    </div>
+                </div>
+            )}</Index>
+            <label class="device-add">
+                <span>+ Add Effect</span>
+                <select onChange={event => {
+                    const key = event.currentTarget.value
+                    event.currentTarget.selectedIndex = 0
+                    if (key !== "") studio.addEffect(key)
+                }}>
+                    <option value="">Add Effect…</option>
+                    <For each={studio.availableEffects()}>{choice => <option value={choice.key}>{choice.name}</option>}</For>
+                </select>
+            </label>
+        </div>
+    )
+}
+
 const ClipDetail = () => {
     const studio = useStudio()
     const state = studio.state
@@ -255,25 +309,7 @@ const ClipDetail = () => {
                 <span class="cd-title">{selectedName()}</span>
                 <span class="cd-sub">48.0 kHz · Stereo</span>
             </div>
-            <Show when={bottom() === "sample"} fallback={
-                <div class="devices">
-                    <For each={devices}>{device => (
-                        <div class="device">
-                            <div class="device-head"><span class="dot" style={{background: device.accent}}/><span>{device.name}</span></div>
-                            <div class="knobgrid">
-                                <For each={device.knobs}>{knob => (
-                                    <div class="knobcell">
-                                        <Knob size={30} indicator={10} rotation={knob.rotation} accent={device.accent}/>
-                                        <span class="knob-label">{knob.label}</span>
-                                        <span class="knob-val">{knob.value}</span>
-                                    </div>
-                                )}</For>
-                            </div>
-                        </div>
-                    )}</For>
-                    <div class="device-drop">Drop Audio Effects Here</div>
-                </div>
-            }>
+            <Show when={bottom() === "sample"} fallback={<EffectsRack/>}>
                 <div class="cd-body">
                     <div class="cd-side">
                         <div class="cd-loop">
@@ -309,9 +345,6 @@ const ArrangeView = () => {
     let scroller: HTMLDivElement | undefined
     let canvas: HTMLCanvasElement | undefined
     let raf = 0
-    let sampleContext: AudioContext | undefined
-    let scheduledSources: AudioBufferSourceNode[] = []
-    const [clips, setClips] = createSignal<ReadonlyArray<ArrangedClip>>([])
     const [dropTrack, setDropTrack] = createSignal("")
     const channels = (): ReadonlyArray<MixerTrack> => state.tracks.filter(track => track.type !== "output")
     const laneWidth = (): string => `${TOTAL_BARS * pxPerBar()}px`
@@ -320,56 +353,18 @@ const ArrangeView = () => {
     const acceptsTimelineDrop = (data: DataTransfer): boolean =>
         hasDragData(data, SAMPLE_MIME) || hasDragData(data, CLIP_MIME) || hasDragData(data, TEXT_MIME) || hasFiles(data)
     const secondsPerBar = (): number => state.bpm > 0 ? (60 / state.bpm) * BEATS_PER_BAR : 2
-    const ensureSampleContext = (): AudioContext => {
-        if (sampleContext === undefined) sampleContext = new AudioContext()
-        return sampleContext
-    }
-    const stopSamples = (): void => {
-        scheduledSources.forEach(source => {
-            try { source.stop() } catch { /* already stopped */ }
-        })
-        scheduledSources = []
-    }
-    const scheduleSamples = async (snapshot: ReadonlyArray<ArrangedClip>, tracks: ReadonlyArray<MixerTrack>, position: number): Promise<void> => {
-        stopSamples()
-        const context = ensureSampleContext()
-        await context.resume()
-        const perBar = state.pulsesPerBar
-        if (perBar <= 0) return
-        const currentBar = position / perBar
-        const barSeconds = secondsPerBar()
-        const soloActive = tracks.some(track => track.solo)
-        snapshot.forEach(clip => {
-            if (clip.buffer === undefined) return
-            const track = tracks.find(item => item.uuid === clip.trackUuid)
-            if (track === undefined || track.mute || (soloActive && !track.solo)) return
-            const clipEnd = clip.startBar + clip.lengthBars
-            if (clipEnd <= currentBar) return
-            const source = context.createBufferSource()
-            const gain = context.createGain()
-            const panner = context.createStereoPanner()
-            const offsetBars = Math.max(0, currentBar - clip.startBar)
-            const offsetSeconds = offsetBars * barSeconds
-            const clipDurationSeconds = clip.lengthBars * barSeconds
-            const remainingSeconds = Math.min(clip.buffer.duration - offsetSeconds, clipDurationSeconds - offsetSeconds)
-            if (remainingSeconds <= 0) return
-            source.buffer = clip.buffer
-            gain.gain.value = track.volume
-            panner.pan.value = clamp(track.pan, -1, 1)
-            source.connect(gain).connect(panner).connect(context.destination)
-            source.onended = () => { scheduledSources = scheduledSources.filter(item => item !== source) }
-            source.start(context.currentTime + Math.max(0, (clip.startBar - currentBar) * barSeconds), offsetSeconds, remainingSeconds)
-            scheduledSources.push(source)
-        })
-    }
-    const decodeFileClip = async (id: string, file: File): Promise<void> => {
-        const context = ensureSampleContext()
-        await context.resume()
-        const buffer = await context.decodeAudioData(await file.arrayBuffer())
-        setClips(current => current.map(clip => {
-            if (clip.id !== id) return clip
-            return {...clip, buffer, loading: false, lengthBars: Math.max(0.25, snapBar(buffer.duration / secondsPerBar()))}
-        }))
+    // Import the file through the engine and place a region on the track's audio lane, then
+    // sync the visual clip with the returned region uuid + real duration.
+    const importClip = (id: string, trackUuid: string, file: File, startBar: number): void => {
+        const positionPulses = startBar * state.pulsesPerBar
+        const settle = (update: (clip: ArrangedClip) => ArrangedClip): void => {
+            setClips(current => current.map(clip => clip.id === id ? update(clip) : clip))
+        }
+        studio.dropSample(trackUuid, file, positionPulses).then(
+            result => settle(clip => result === undefined
+                ? {...clip, title: `${clip.title} (import failed)`, loading: false}
+                : {...clip, loading: false, regionUuid: result.uuid, lengthBars: Math.max(0.25, snapBar(result.durationSeconds / secondsPerBar()))}),
+            error => { console.error("[samples] dropSample rejected", error); settle(clip => ({...clip, title: `${clip.title} (import failed)`, loading: false})) })
     }
     const timelineDrop = (clientX: number, clientY: number, offsetBars: number, lengthBars: number): {track: MixerTrack; startBar: number} | undefined => {
         if (scroller === undefined) return undefined
@@ -416,6 +411,9 @@ const ArrangeView = () => {
             setClips(current => current.map(clip => clip.id === clipId
                 ? {...clip, trackUuid: drop.track.uuid, color, startBar: drop.startBar}
                 : clip))
+            if (currentClip.regionUuid !== undefined) {
+                studio.moveSample(currentClip.regionUuid, drop.track.uuid, drop.startBar * state.pulsesPerBar)
+            }
             return
         }
         const files = Array.from(data.files)
@@ -423,23 +421,18 @@ const ArrangeView = () => {
         names.forEach((name, index) => {
             const drop = timelineDrop(event.clientX, event.clientY, offsetBars + index * SAMPLE_CLIP_BARS, SAMPLE_CLIP_BARS)
             if (drop === undefined) return
-            const ord = studio.ordinalOf(drop.track.uuid)
+            const file = files[index]
+            // Tracks are audio (Tape) units, so a dropped sample lands on the track it was
+            // dropped onto — no new track. Browser decor samples (no File) stay visual-only.
+            const trackUuid = drop.track.uuid
+            const ord = studio.ordinalOf(trackUuid)
             const color = palette[(ord - 1) % palette.length]
             const id = crypto.randomUUID()
-            const file = files[index]
-            studio.select(drop.track.uuid)
+            studio.select(trackUuid)
             setClips(current => [...current, {
-                id,
-                trackUuid: drop.track.uuid,
-                title: name,
-                startBar: drop.startBar,
-                lengthBars: SAMPLE_CLIP_BARS,
-                color,
-                loading: file !== undefined
+                id, trackUuid, title: name, startBar: drop.startBar, lengthBars: SAMPLE_CLIP_BARS, color, loading: file !== undefined
             }])
-            if (file !== undefined) void decodeFileClip(id, file).catch(() => {
-                setClips(current => current.map(clip => clip.id === id ? {...clip, title: `${clip.title} (decode failed)`, loading: false} : clip))
-            })
+            if (file !== undefined) importClip(id, trackUuid, file, drop.startBar)
         })
     }
     const onClipDragStart = (clip: ArrangedClip, event: DragEvent & {currentTarget: HTMLDivElement}): void => {
@@ -465,7 +458,6 @@ const ArrangeView = () => {
         const snap = state.pulsesPerQuarter
         const position = Math.max(0, snap > 0 ? Math.round(raw / snap) * snap : raw)
         studio.setPosition(position)
-        if (state.playing) void scheduleSamples(clips(), channels(), position)
     }
     // The grid is drawn on a viewport-sized canvas (not CSS): lines stay crisp at any zoom and
     // the 400-bar timeline never builds a 100k-px element. Redraws only on scroll / zoom / resize.
@@ -518,18 +510,6 @@ const ArrangeView = () => {
             setTrackHeight(value => clamp(value * (event.deltaY < 0 ? 1.1 : 0.91), 52, 200))
         }
     }
-    createEffect(() => {
-        const playing = state.playing
-        const bpm = state.bpm
-        const snapshot = clips()
-        const tracks = channels()
-        void bpm
-        if (!playing) {
-            stopSamples()
-            return
-        }
-        void scheduleSamples(snapshot, tracks, untrack(() => state.position))
-    })
     onMount(() => {
         scroller?.addEventListener("scroll", requestDraw, {passive: true})
         scroller?.addEventListener("wheel", onWheel, {passive: false})
@@ -541,8 +521,6 @@ const ArrangeView = () => {
             scroller?.removeEventListener("wheel", onWheel)
             observer.disconnect()
             if (raf !== 0) cancelAnimationFrame(raf)
-            stopSamples()
-            void sampleContext?.close()
         })
     })
     createEffect(() => {
@@ -610,7 +588,7 @@ const ArrangeView = () => {
                             )
                         }}</For>
                         <div class="lane-row">
-                            <button class="add-track-row" onClick={() => studio.addTrack("Vaporisateur")}>+ Add Track</button>
+                            <button class="add-track-row" onClick={() => studio.addAudioTrack()}>+ Add Track</button>
                         </div>
                         <div class="playhead" style={{left: `${HEADER_W + playheadLanePx()}px`, height: `${channels().length * trackHeight()}px`}}/>
                     </div>
@@ -621,14 +599,16 @@ const ArrangeView = () => {
     )
 }
 
-const ChannelStrip = (props: {name: string; track: MixerTrack; accent: string; index: number}) => {
+const ChannelStrip = (props: {track: MixerTrack; index: number}) => {
     const studio = useStudio()
+    const ord = (): number => studio.ordinalOf(props.track.uuid)
+    const accent = (): string => palette[(ord() - 1) % palette.length]
     const live = (): boolean => studio.state.playing && !props.track.mute
     return (
         <div class="strip" classList={{selected: studio.state.selectedTrack === props.track.uuid}}
              onClick={() => studio.select(props.track.uuid)}>
-            <div class="strip-name" style={{"border-color": props.accent}}>{props.name}</div>
-            <PanKnob value={props.track.pan} accent={props.accent} onChange={value => studio.setPan(props.track.uuid, value)}/>
+            <div class="strip-name" style={{"border-color": accent()}}>{`Track ${ord()}`}</div>
+            <PanKnob value={props.track.pan} accent={accent()} onChange={value => studio.setPan(props.track.uuid, value)}/>
             <span class="strip-pan">{panText(props.track.pan)}</span>
             <div class="sends">
                 <div class="send"><div class="send-knob"/><span class="send-label">A</span></div>
@@ -667,13 +647,10 @@ const MixView = () => {
     const master = (): MixerTrack | undefined => state.tracks.find(track => track.type === "output")
     return (
         <div class="mix">
-            <For each={channels()}>
-                {(track, index) => {
-                    const ord = studio.ordinalOf(track.uuid)
-                    return <ChannelStrip name={`Track ${ord}`} index={index()} track={track} accent={palette[(ord - 1) % palette.length]}/>
-                }}
-            </For>
-            <button class="strip add" onClick={() => studio.addTrack("Vaporisateur")}>+ Track</button>
+            <Index each={channels()}>
+                {(track, index) => <ChannelStrip index={index} track={track()}/>}
+            </Index>
+            <button class="strip add" onClick={() => studio.addAudioTrack()}>+ Track</button>
             <Show when={master()}>{value => <MasterStrip track={value()}/>}</Show>
         </div>
     )

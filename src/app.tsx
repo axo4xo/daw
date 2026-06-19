@@ -4,12 +4,12 @@ import {Looper} from "./ui/Looper"
 
 const Boot = () => {
     const studio = useStudio()
-    let seeded = false
+    let seeded = false;
     onMount(() => studio.start())
     createEffect(() => {
         if (studio.state.phase === "ready" && !seeded) {
-            seeded = true
-            for (let index = 0; index < 6; index++) studio.addTrack("Vaporisateur")
+            seeded = true;
+            for (let index = 0; index < 4; index++) studio.addAudioTrack();
         }
     })
     return <Looper/>

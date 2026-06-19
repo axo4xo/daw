@@ -50,25 +50,6 @@ export const browserItems = ["Drums", "Instruments", "Audio Effects", "MIDI Effe
 export const browserSamples = ["808 Kick", "808 Clap", "808 HiHat", "808 Snare", "Open Hat"]
 export const scenes = ["Intro", "Verse", "Drop", "Break", "Bridge", "Outro"]
 
-export type DecorKnob = {label: string; value: string; rotation: string}
-export type DecorDevice = {name: string; accent: string; knobs: ReadonlyArray<DecorKnob>}
-export const devices: ReadonlyArray<DecorDevice> = [
-    {name: "EQ Eight", accent: "#7aa7f5", knobs: [
-        {label: "Freq", value: "440", rotation: "-50deg"},
-        {label: "Gain", value: "+2.0", rotation: "35deg"},
-        {label: "Q", value: "0.7", rotation: "-85deg"}]},
-    {name: "OTT", accent: "#e9789b", knobs: [
-        {label: "Depth", value: "100%", rotation: "130deg"},
-        {label: "Time", value: "120", rotation: "120deg"},
-        {label: "In", value: "0.0", rotation: "0deg"},
-        {label: "Out", value: "0.0", rotation: "0deg"}]},
-    {name: "Crystallizer", accent: "#a374f5", knobs: [
-        {label: "Mix", value: "40%", rotation: "-60deg"},
-        {label: "Pitch", value: "+7", rotation: "45deg"},
-        {label: "Delay", value: "1/8", rotation: "10deg"},
-        {label: "Recycle", value: "55%", rotation: "70deg"}]}
-]
-
 export const waveform: ReadonlyArray<number> = Array.from({length: 130}, (_unused, i) => {
     const env = 0.5 + 0.42 * Math.sin(i / 13 + 1)
     const detail = Math.abs(Math.sin(i * 0.9)) * 0.55 + Math.abs(Math.sin(i * 0.41 + 2)) * 0.45
