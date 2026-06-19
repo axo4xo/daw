@@ -49,6 +49,9 @@ export interface StudioController {
     removeEffect(effectUuid: string): void
     toggleEffect(effectUuid: string): void
     setEffectParam(effectUuid: string, paramIndex: number, unitValue: number): void
+    // Direct meter subscriptions — deliberately bypass the store (high-frequency, canvas-rendered).
+    onMasterMeter(callback: (peak: Float32Array, rms: Float32Array) => void): () => void
+    onUnitMeter(uuid: string, callback: (data: Float32Array) => void): () => void
     // Dropped audio routed through the engine (region on the track's audio lane).
     dropSample(trackUuid: string, file: File, positionPulses: number): Promise<DroppedSample | undefined>
     moveSample(regionUuid: string, trackUuid: string, positionPulses: number): void
@@ -143,6 +146,8 @@ const createController = (): StudioController => {
         toggleEffect: effectUuid => withStudio(current => current.effects.toggle(state.selectedTrack, effectUuid)),
         setEffectParam: (effectUuid, paramIndex, unitValue) =>
             withStudio(current => current.effects.setParam(state.selectedTrack, effectUuid, paramIndex, unitValue)),
+        onMasterMeter: callback => studio !== undefined ? studio.onMasterMeter(callback) : () => {},
+        onUnitMeter: (uuid, callback) => studio !== undefined ? studio.onUnitMeter(uuid, callback) : () => {},
         dropSample: (trackUuid, file, positionPulses) =>
             studio !== undefined ? studio.samples.drop(trackUuid, file, positionPulses) : Promise.resolve(undefined),
         moveSample: (regionUuid, trackUuid, positionPulses) =>

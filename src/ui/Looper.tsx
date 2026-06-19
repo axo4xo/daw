@@ -74,13 +74,17 @@ const EffectKnob = (props: {value: number; accent: string; onChange: (value: num
 }
 
 // Interactive vertical fader (0..1). Drag up/down.
-const Fader = (props: {value: number; live: boolean; delay: string; onChange: (value: number) => void}) => {
+const Fader = (props: {value: number; live: boolean; delay: string; meterSlot?: JSX.Element; onChange: (value: number) => void}) => {
     let active = false, startY = 0, startValue = 0
     return (
         <div class="fader-area">
-            <div class="fader-meter">
-                <div classList={{vu: props.live}} style={{height: props.live ? "85%" : "6%", "animation-delay": props.delay}}/>
-            </div>
+            <Show when={props.meterSlot !== undefined} fallback={
+                <div class="fader-meter">
+                    <div classList={{vu: props.live}} style={{height: props.live ? "85%" : "6%", "animation-delay": props.delay}}/>
+                </div>
+            }>
+                {props.meterSlot}
+            </Show>
             <div class="fader-track"
                  onPointerDown={event => { active = true; startY = event.clientY; startValue = props.value; event.currentTarget.setPointerCapture(event.pointerId) }}
                  onPointerMove={event => { if (active) props.onChange(clamp(startValue + (startY - event.clientY) / event.currentTarget.clientHeight, 0, 1)) }}
@@ -549,8 +553,6 @@ const ArrangeView = () => {
                         </div>
                         <For each={channels()}>{track => {
                             const ord = studio.ordinalOf(track.uuid)
-                            const accent = palette[(ord - 1) % palette.length]
-                            const live = (): boolean => state.playing && !track.mute
                             return (
                                 <div class="lane-row" style={{height: `${trackHeight()}px`}}>
                                     <div class="track-head" classList={{selected: state.selectedTrack === track.uuid}}
@@ -562,7 +564,7 @@ const ArrangeView = () => {
                                                 <span class="ms m" classList={{on: track.mute}} onClick={() => studio.toggleMute(track.uuid)}>M</span>
                                                 <span class="ms s" classList={{on: track.solo}} onClick={() => studio.toggleSolo(track.uuid)}>S</span>
                                                 <div class="track-meterbar">
-                                                    <div classList={{vu: live()}} style={{width: live() ? "80%" : "10%", background: accent, "animation-delay": `${ord * 0.1}s`}}/>
+                                                    <Meter subscribe={callback => studio.onUnitMeter(track.uuid, callback)} orientation="horizontal"/>
                                                 </div>
                                             </div>
                                         </div>
@@ -599,6 +601,58 @@ const ArrangeView = () => {
     )
 }
 
+// Real PPM on a <canvas>, entirely outside the Solid reactive tree. The data callback only caches
+// the latest peak (L/R); a continuous rAF loop draws with peak-hold + release ballistics, so the
+// meter stays smooth at the display rate regardless of how often the engine pushes new values.
+const Meter = (props: {subscribe: (callback: (peak: Float32Array) => void) => () => void; orientation?: "vertical" | "horizontal"}) => {
+    const studio = useStudio()
+    let canvas: HTMLCanvasElement | undefined
+    let targetL = 0, targetR = 0, dispL = 0, dispR = 0
+    const RELEASE = 0.82
+    const norm = (amp: number): number => amp <= 0.0001 ? 0 : clamp((20 * Math.log10(amp) + 60) / 60, 0, 1)
+    createEffect(() => {
+        if (studio.state.phase !== "ready") return
+        onCleanup(props.subscribe(peak => { targetL = peak[0] ?? 0; targetR = peak[1] ?? 0 }))
+    })
+    onMount(() => {
+        let raf = 0
+        const loop = (): void => {
+            raf = requestAnimationFrame(loop)
+            dispL = targetL > dispL ? targetL : dispL * RELEASE + targetL * (1 - RELEASE)
+            dispR = targetR > dispR ? targetR : dispR * RELEASE + targetR * (1 - RELEASE)
+            if (canvas === undefined) return
+            const ctx = canvas.getContext("2d")
+            if (ctx === null) return
+            const dpr = window.devicePixelRatio || 1
+            const w = canvas.clientWidth, h = canvas.clientHeight
+            if (w === 0 || h === 0) return
+            if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr)
+            if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr)
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+            ctx.clearRect(0, 0, w, h)
+            if (props.orientation === "horizontal") {
+                const gradient = ctx.createLinearGradient(0, 0, w, 0)
+                gradient.addColorStop(0, "#5ec8c0"); gradient.addColorStop(0.7, "#b388ff"); gradient.addColorStop(1, "#e0556a")
+                ctx.fillStyle = gradient
+                ctx.fillRect(0, 0, norm(Math.max(dispL, dispR)) * w, h)
+            } else {
+                const gap = 2, barW = (w - gap) / 2
+                const gradient = ctx.createLinearGradient(0, h, 0, 0)
+                gradient.addColorStop(0, "#5ec8c0"); gradient.addColorStop(0.7, "#b388ff"); gradient.addColorStop(1, "#e0556a")
+                ctx.fillStyle = gradient
+                const levels = [dispL, dispR]
+                for (let channel = 0; channel < 2; channel++) {
+                    const barH = norm(levels[channel]) * h
+                    ctx.fillRect(channel * (barW + gap), h - barH, barW, barH)
+                }
+            }
+        }
+        raf = requestAnimationFrame(loop)
+        onCleanup(() => cancelAnimationFrame(raf))
+    })
+    return <canvas class="meter-canvas" classList={{horizontal: props.orientation === "horizontal"}} ref={element => { canvas = element }}/>
+}
+
 const ChannelStrip = (props: {track: MixerTrack; index: number}) => {
     const studio = useStudio()
     const ord = (): number => studio.ordinalOf(props.track.uuid)
@@ -615,6 +669,7 @@ const ChannelStrip = (props: {track: MixerTrack; index: number}) => {
                 <div class="send"><div class="send-knob"/><span class="send-label">B</span></div>
             </div>
             <Fader value={props.track.volume} live={live()} delay={`${props.index * 0.1}s`}
+                   meterSlot={<Meter subscribe={callback => studio.onUnitMeter(props.track.uuid, callback)}/>}
                    onChange={value => studio.setVolume(props.track.uuid, value)}/>
             <span class="strip-vol">{props.track.volumeText}</span>
             <div class="strip-btns">
@@ -633,7 +688,8 @@ const MasterStrip = (props: {track: MixerTrack}) => {
             <div class="strip-name">Master</div>
             <PanKnob value={props.track.pan} accent="#b388ff" onChange={value => studio.setPan(props.track.uuid, value)}/>
             <span class="strip-pan">{panText(props.track.pan)}</span>
-            <Fader value={props.track.volume} live={studio.state.playing} delay="0s"
+            <Fader value={props.track.volume} live={false} delay="0s"
+                   meterSlot={<Meter subscribe={callback => studio.onMasterMeter(peak => callback(peak))}/>}
                    onChange={value => studio.setVolume(props.track.uuid, value)}/>
             <span class="strip-vol">{props.track.volumeText}</span>
         </div>

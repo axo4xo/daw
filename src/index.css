@@ -208,6 +208,8 @@ svg { display: block; }
 .send-label { font-size: 8.5px; color: var(--t8); }
 .fader-area { flex: 1; display: flex; align-items: stretch; gap: 8px; width: 100%; justify-content: center; min-height: 120px; }
 .fader-meter { position: relative; width: 8px; background: var(--input); border-radius: 4px; border: 1px solid var(--bd2); }
+.meter-canvas { width: 16px; background: var(--input); border-radius: 4px; border: 1px solid var(--bd2); display: block; }
+.meter-canvas.horizontal { width: 100%; height: 100%; background: none; border: none; border-radius: 0; }
 .fader-meter > div { position: absolute; bottom: 0; left: 0; right: 0; background: var(--meter); border-radius: 4px; }
 .fader-track { position: relative; width: 6px; background: var(--input); border-radius: 3px; }
 .fader-thumb { position: absolute; left: 50%; transform: translate(-50%, 50%); width: 24px; height: 14px; border-radius: 4px; background: linear-gradient(180deg, #3a3a44, #222229); border: 1px solid #44444f; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); }

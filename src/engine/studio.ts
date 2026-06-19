@@ -1,4 +1,4 @@
-import {assert, ObservableValue} from "@opendaw/lib-std"
+import {assert, ObservableValue, UUID} from "@opendaw/lib-std"
 import {AnimationFrame} from "@opendaw/lib-dom"
 import {Promises} from "@opendaw/lib-runtime"
 import {bpm, PPQN, ppqn} from "@opendaw/lib-dsp"
@@ -46,6 +46,11 @@ export interface Studio {
     onBpmChange(callback: (value: bpm) => void): Unsubscribe
     onCpuLoadChange(callback: (load: number) => void): Unsubscribe
     onLoopingChange(callback: (enabled: boolean) => void): Unsubscribe
+    // Stereo master peak/rms (linear amplitude per channel), ~60fps off the reactive tree.
+    onMasterMeter(callback: (peak: Float32Array, rms: Float32Array) => void): Unsubscribe
+    // Per-unit level: the engine broadcasts each audio unit's [peakL, peakR, rmsL, rmsR] (linear)
+    // at the unit's own live-stream address. callback fires on the live-data pump (~60fps).
+    onUnitMeter(uuid: string, callback: (data: Float32Array) => void): Unsubscribe
     resumeContext(): Promise<void>
     dispose(): void
 }
@@ -82,10 +87,16 @@ export const createStudio = async (): Promise<Studio> => {
     const soundfontService = new SoundfontService()
     const audioWorklets = AudioWorklets.get(audioContext)
     const project = Project.new({audioContext, audioWorklets, sampleManager, soundfontManager, sampleService, soundfontService})
-    project.startAudioWorklet()
+    const worklet = project.startAudioWorklet()
     // Drives the worklet-to-main state pump for position, play state, BPM, and CPU.
     AnimationFrame.start(window)
     await project.engine.isReady()
+    // Tap the engine's master output with a MeterWorklet for real PPM. It reads peak/rms over a
+    // SharedArrayBuffer on the AnimationFrame loop (built-in decay), so the meter never touches the
+    // Solid store. It's a pure analyser tap (no audio passthrough). Per-unit metering isn't exposed
+    // by the SDK — only this master output is cleanly tappable.
+    const masterMeter = audioWorklets.createMeter(2)
+    worklet.connect(masterMeter)
     const {engine, editing, api} = project
     return {
         audioContext,
@@ -105,7 +116,17 @@ export const createStudio = async (): Promise<Studio> => {
         onBpmChange: callback => onValue(engine.bpm, callback),
         onCpuLoadChange: callback => onValue(engine.cpuLoad, callback),
         onLoopingChange: callback => onValue(project.timelineBox.loopArea.enabled, callback),
+        onMasterMeter: callback => {
+            const subscription = masterMeter.subscribe(({peak, rms}) => callback(peak, rms))
+            return () => subscription.terminate()
+        },
+        onUnitMeter: (uuid, callback) => {
+            const unit = project.rootBoxAdapter.audioUnits.adapters().find(adapter => UUID.toString(adapter.uuid) === uuid)
+            if (unit === undefined) return () => {}
+            const subscription = project.liveStreamReceiver.subscribeFloats(unit.address, callback)
+            return () => subscription.terminate()
+        },
         resumeContext: () => audioContext.resume(),
-        dispose: () => { project.terminate(); void audioContext.close() }
+        dispose: () => { masterMeter.terminate(); project.terminate(); void audioContext.close() }
     }
 }
