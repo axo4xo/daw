@@ -200,10 +200,6 @@ const Transport = () => {
                 </div>
             </div>
             <div class="tright">
-                <div class="meter-mini">
-                    <span classList={{vu: state.playing}} style={{height: "60%"}}/>
-                    <span classList={{vu: state.playing}} style={{height: "78%", "animation-delay": "0.15s"}}/>
-                </div>
                 <div class="cpu">
                     <span class="cpu-val">{state.phase === "ready" ? `${Math.round(state.cpu * 100)}%` : "—"}</span>
                     <span class="ro-label">CPU</span>

@@ -83,8 +83,6 @@ svg { display: block; }
 .ro-sig { font-family: var(--mono); font-size: 14px; color: var(--t3); border: 1px solid var(--bd3); border-radius: 6px; padding: 1px 7px; }
 .ro-key { font-family: var(--mono); font-size: 11px; color: #8a8a96; }
 .tright { display: flex; align-items: center; gap: 16px; }
-.meter-mini { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
-.meter-mini span { width: 5px; background: linear-gradient(0deg, #5ec8c0, #b388ff); border-radius: 2px; align-self: flex-end; }
 .cpu { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .cpu-val { font-family: var(--mono); font-size: 12px; color: var(--t4); }
 
@@ -226,7 +224,7 @@ svg { display: block; }
 @keyframes vuY { 0% { transform: scaleY(0.45); } 30% { transform: scaleY(0.9); } 55% { transform: scaleY(0.6); } 80% { transform: scaleY(1); } 100% { transform: scaleY(0.5); } }
 @keyframes vuX { 0% { transform: scaleX(0.5); } 30% { transform: scaleX(0.95); } 60% { transform: scaleX(0.65); } 100% { transform: scaleX(0.55); } }
 .fader-meter > div { transition: height 0.15s ease; }
-.fader-meter > div.vu, .meter-mini > span.vu { transform-origin: bottom; animation: vuY 0.55s ease-in-out infinite; }
+.fader-meter > div.vu { transform-origin: bottom; animation: vuY 0.55s ease-in-out infinite; }
 .track-meterbar > div.vu { transform-origin: left; animation: vuX 0.5s ease-in-out infinite; }
 
 .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--t7); font-size: 13px; }
