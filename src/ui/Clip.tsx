@@ -13,6 +13,7 @@ export type ClipProps = {
     onClick?: JSX.EventHandler<HTMLDivElement, MouseEvent>
     onDragStart?: JSX.EventHandler<HTMLDivElement, DragEvent>
     onDragEnd?: JSX.EventHandler<HTMLDivElement, DragEvent>
+    children?: JSX.Element
 }
 
 export const Clip = (props: ClipProps) => (
@@ -23,6 +24,6 @@ export const Clip = (props: ClipProps) => (
          onDragStart={props.onDragStart}
          onDragEnd={props.onDragEnd}>
         <div class="clip-head" style={{background: hexA(props.color, 0.42)}}><span>{props.title}</span></div>
-        <div class="clip-body" style={{"background-image": props.kind === "audio" ? AUDIO_PATTERN : MIDI_PATTERN}}/>
+        <div class="clip-body" style={{"background-image": props.children !== undefined ? "none" : (props.kind === "audio" ? AUDIO_PATTERN : MIDI_PATTERN)}}>{props.children}</div>
     </div>
 )

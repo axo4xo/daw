@@ -1,8 +1,8 @@
 import {createEffect, createSignal, For, Index, type JSX, onCleanup, onMount, Show} from "solid-js"
 import {useStudio} from "../studio"
-import type {MixerTrack} from "../engine"
+import type {MixerTrack, Peaks} from "../engine"
 import {Clip} from "./Clip"
-import {browserItems, browserSamples, NEUTRAL, palette, waveBars, waveform} from "./decor"
+import {browserItems, browserSamples, hexA, NEUTRAL, palette} from "./decor"
 
 type View = "arrange" | "mix"
 type Bottom = "sample" | "effects"
@@ -14,6 +14,7 @@ type ArrangedClip = {
     lengthBars: number
     color: string
     regionUuid?: string
+    sampleUuid?: string
     loading?: boolean
 }
 
@@ -286,6 +287,40 @@ const EffectsRack = () => {
     )
 }
 
+// Real sample waveform on a <canvas>. Peaks are an opaque SDK object handed back to the engine's
+// renderPeaks (which owns PeaksPainter), so the UI bundle stays SDK-free. Redraws on peaks-load and
+// resize only — a waveform is static, no rAF loop needed.
+const Waveform = (props: {sampleUuid: string; color?: string; class?: string}) => {
+    const studio = useStudio()
+    let canvas: HTMLCanvasElement | undefined
+    let peaks: Peaks | undefined
+    const redraw = (): void => {
+        if (canvas === undefined) return
+        const ctx = canvas.getContext("2d")
+        if (ctx === null) return
+        const dpr = window.devicePixelRatio || 1
+        const w = canvas.clientWidth, h = canvas.clientHeight
+        if (w === 0 || h === 0) return
+        canvas.width = Math.round(w * dpr)
+        canvas.height = Math.round(h * dpr)
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        if (peaks !== undefined) studio.renderPeaks(ctx, peaks, {width: w, height: h, dpr, color: props.color ?? "#bca0ff"})
+    }
+    createEffect(() => {
+        const uuid = props.sampleUuid
+        if (studio.state.phase !== "ready") return
+        peaks = undefined
+        redraw()
+        onCleanup(studio.onSamplePeaks(uuid, next => { peaks = next; redraw() }))
+    })
+    onMount(() => {
+        const observer = new ResizeObserver(() => redraw())
+        if (canvas !== undefined) observer.observe(canvas)
+        onCleanup(() => observer.disconnect())
+    })
+    return <canvas class={props.class ?? "cd-wave-canvas"} ref={element => { canvas = element }}/>
+}
+
 const ClipDetail = () => {
     const studio = useStudio()
     const state = studio.state
@@ -294,6 +329,9 @@ const ClipDetail = () => {
         const ord = studio.ordinalOf(state.selectedTrack)
         return ord > 0 ? `Track ${ord}` : "—"
     }
+    // The first dropped sample on the selected track (its waveform fills the Sample panel).
+    const selectedSampleUuid = (): string | undefined =>
+        clips().find(clip => clip.trackUuid === state.selectedTrack && clip.sampleUuid !== undefined)?.sampleUuid
     return (
         <div class="clipdetail">
             <div class="cd-head">
@@ -326,12 +364,9 @@ const ClipDetail = () => {
                         </div>
                     </div>
                     <div class="cd-wave">
-                        <div class="cd-wave-ruler">
-                            <For each={waveBars}>{(bar, i) => <div style={{left: `${(i() / (waveBars.length - 1)) * 96}%`}}>{bar}</div>}</For>
-                        </div>
-                        <div class="cd-wave-body">
-                            <For each={waveform}>{height => <div class="cd-wave-bar" style={{height: `${height}%`}}/>}</For>
-                        </div>
+                        <Show when={selectedSampleUuid()} fallback={<div class="cd-wave-empty">No sample selected</div>}>
+                            {uuid => <Waveform sampleUuid={uuid()}/>}
+                        </Show>
                     </div>
                 </div>
             </Show>
@@ -363,7 +398,8 @@ const ArrangeView = () => {
         studio.dropSample(trackUuid, file, positionPulses).then(
             result => settle(clip => result === undefined
                 ? {...clip, title: `${clip.title} (import failed)`, loading: false}
-                : {...clip, loading: false, regionUuid: result.uuid, lengthBars: Math.max(0.25, snapBar(result.durationSeconds / secondsPerBar()))}),
+                : {...clip, loading: false, regionUuid: result.regionUuid, sampleUuid: result.sampleUuid,
+                    lengthBars: Math.max(0.25, snapBar(result.durationSeconds / secondsPerBar()))}),
             error => { console.error("[samples] dropSample rejected", error); settle(clip => ({...clip, title: `${clip.title} (import failed)`, loading: false})) })
     }
     const timelineDrop = (clientX: number, clientY: number, offsetBars: number, lengthBars: number): {track: MixerTrack; startBar: number} | undefined => {
@@ -579,7 +615,11 @@ const ArrangeView = () => {
                                                   draggable
                                                   onClick={event => { event.stopPropagation(); studio.select(track.uuid) }}
                                                   onDragStart={event => onClipDragStart(clip, event)}
-                                                  onDragEnd={() => setDropTrack("")}/>
+                                                  onDragEnd={() => setDropTrack("")}>
+                                                {clip.sampleUuid !== undefined
+                                                    ? <Waveform sampleUuid={clip.sampleUuid} color={hexA(clip.color, 0.85)} class="clip-wave"/>
+                                                    : undefined}
+                                            </Clip>
                                         )}</For>
                                     </div>
                                 </div>

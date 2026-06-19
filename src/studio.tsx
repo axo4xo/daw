@@ -1,6 +1,6 @@
 import {createContext, createEffect, ParentComponent, useContext} from "solid-js"
 import {createStore} from "solid-js/store"
-import type {DroppedSample, EffectChoice, EffectInfo, InstrumentKey, MixerTrack, Studio} from "./engine"
+import type {DroppedSample, EffectChoice, EffectInfo, InstrumentKey, MixerTrack, Peaks, Studio, WaveformOptions} from "./engine"
 
 // Solid integration layer over the engine facade. Lives in the main chunk, so it
 // imports the engine only via dynamic import() (keeping the ~1MB SDK out of first
@@ -55,6 +55,9 @@ export interface StudioController {
     // Dropped audio routed through the engine (region on the track's audio lane).
     dropSample(trackUuid: string, file: File, positionPulses: number): Promise<DroppedSample | undefined>
     moveSample(regionUuid: string, trackUuid: string, positionPulses: number): void
+    // Waveform peaks for a dropped sample, and the SDK-side renderer (keeps PeaksPainter out of the UI bundle).
+    onSamplePeaks(sampleUuid: string, callback: (peaks: Peaks | undefined) => void): () => void
+    renderPeaks(context: CanvasRenderingContext2D, peaks: Peaks, options: WaveformOptions): void
 }
 
 const createController = (): StudioController => {
@@ -151,7 +154,9 @@ const createController = (): StudioController => {
         dropSample: (trackUuid, file, positionPulses) =>
             studio !== undefined ? studio.samples.drop(trackUuid, file, positionPulses) : Promise.resolve(undefined),
         moveSample: (regionUuid, trackUuid, positionPulses) =>
-            withStudio(current => current.samples.move(regionUuid, trackUuid, positionPulses))
+            withStudio(current => current.samples.move(regionUuid, trackUuid, positionPulses)),
+        onSamplePeaks: (sampleUuid, callback) => studio !== undefined ? studio.samples.onPeaks(sampleUuid, callback) : () => {},
+        renderPeaks: (context, peaks, options) => withStudio(current => current.samples.renderPeaks(context, peaks, options))
     }
 }
 

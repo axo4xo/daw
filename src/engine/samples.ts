@@ -1,5 +1,6 @@
 import {asInstanceOf, isDefined, Optional, tryCatch, UUID} from "@opendaw/lib-std"
 import {Promises} from "@opendaw/lib-runtime"
+import {Peaks, PeaksPainter} from "@opendaw/lib-fusion"
 import {AudioUnitBoxAdapter, TrackType} from "@opendaw/studio-adapters"
 import {Project, SampleService} from "@opendaw/studio-core"
 import {AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox} from "@opendaw/studio-boxes"
@@ -10,14 +11,22 @@ import {AudioFileBox, AudioRegionBox, AudioUnitBox, TrackBox} from "@opendaw/stu
 // own RecordAudio / RecordTrack recipe. The matching loader (studio.ts) serves the OPFS
 // sample back to the engine by uuid.
 
-export type DroppedSample = {readonly uuid: string; readonly durationSeconds: number}
+export type DroppedSample = {readonly regionUuid: string; readonly sampleUuid: string; readonly durationSeconds: number}
+// Waveform draw target: pixel size + devicePixelRatio (coords are passed to the painter in device
+// pixels, matching openDAW's AudioRenderer) and the fill colour.
+export type WaveformOptions = {readonly width: number; readonly height: number; readonly dpr: number; readonly color: string}
 
 export interface SamplesApi {
     // Imports the file and places a region at positionPulses on trackUuid. Resolves with the
-    // region's uuid + sample duration, or undefined if the track is gone / import failed.
+    // region + sample uuids and duration, or undefined if the track is gone / import failed.
     drop(trackUuid: string, file: File, positionPulses: number): Promise<Optional<DroppedSample>>
     // Re-parents an existing region onto trackUuid's audio lane at positionPulses.
     move(regionUuid: string, trackUuid: string, positionPulses: number): void
+    // Subscribes to a sample's peaks (waveform data); fires immediately with current peaks (or
+    // undefined while loading) and again once the loader resolves them from OPFS.
+    onPeaks(sampleUuid: string, callback: (peaks: Optional<Peaks>) => void): () => void
+    // Draws peaks onto a 2D context (SDK PeaksPainter lives here so the UI stays SDK-free).
+    renderPeaks(context: CanvasRenderingContext2D, peaks: Peaks, options: WaveformOptions): void
 }
 
 export const createSamplesApi = (project: Project, sampleService: SampleService): SamplesApi => {
@@ -57,7 +66,7 @@ export const createSamplesApi = (project: Project, sampleService: SampleService)
                 const targetTrack = findOrCreateAudioLane(unit.box)
                 const region = api.createNotStretchedRegion({boxGraph, targetTrack, audioFileBox, sample, position: Math.round(positionPulses)})
                 project.trackUserCreatedSample(uuid)
-                return {uuid: UUID.toString(region.address.uuid), durationSeconds: sample.duration}
+                return {regionUuid: UUID.toString(region.address.uuid), sampleUuid: UUID.toString(uuid), durationSeconds: sample.duration}
             }).unwrapOrUndefined())
             if (placed.status === "failure") { console.error("[samples] region creation failed", placed.error); return undefined }
             return placed.value
@@ -72,6 +81,25 @@ export const createSamplesApi = (project: Project, sampleService: SampleService)
                     region.position.setValue(Math.round(positionPulses))
                 })
             })
+        },
+        onPeaks(sampleUuid, callback) {
+            const loader = project.sampleManager.getOrCreate(UUID.parse(sampleUuid))
+            callback(loader.peaks.unwrapOrUndefined())
+            const subscription = loader.subscribe(() => callback(loader.peaks.unwrapOrUndefined()))
+            return () => subscription.terminate()
+        },
+        renderPeaks(context, peaks, {width, height, dpr, color}) {
+            const widthPx = width * dpr, heightPx = height * dpr
+            context.fillStyle = color
+            context.strokeStyle = color
+            const pad = 2 * dpr
+            // One combined waveform: overlay every channel into a single full-height band.
+            for (let channel = 0; channel < Math.max(1, peaks.numChannels); channel++) {
+                PeaksPainter.renderPixelStrips(context, peaks, channel, {
+                    u0: 0, u1: peaks.numFrames, v0: -1, v1: 1,
+                    x0: 0, x1: widthPx, y0: pad, y1: heightPx - pad
+                })
+            }
         }
     }
 }

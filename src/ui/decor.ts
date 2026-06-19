@@ -43,18 +43,9 @@ export const decorTracks: ReadonlyArray<DecorTrack> = [
         {title: "Hook Vox", left: 45, width: 25, kind: "audio", color: "#b7d96a"}]}
 ]
 
-export const rulerBars = [1, 5, 9, 13, 17, 21, 25, 29]
-export const waveBars = [1, 5, 9, 13, 17, 21, 25, 29, 33]
-
 export const browserItems = ["Drums", "Instruments", "Audio Effects", "MIDI Effects", "Plug-ins", "Clips", "Samples", "Grooves"]
 export const browserSamples = ["808 Kick", "808 Clap", "808 HiHat", "808 Snare", "Open Hat"]
 export const scenes = ["Intro", "Verse", "Drop", "Break", "Bridge", "Outro"]
-
-export const waveform: ReadonlyArray<number> = Array.from({length: 130}, (_unused, i) => {
-    const env = 0.5 + 0.42 * Math.sin(i / 13 + 1)
-    const detail = Math.abs(Math.sin(i * 0.9)) * 0.55 + Math.abs(Math.sin(i * 0.41 + 2)) * 0.45
-    return Math.max(5, Math.min(98, (0.18 + env * 0.6 * detail) * 100))
-})
 
 export const panLabel = (pan: number): string => pan === 0 ? "C" : pan < 0 ? `${Math.abs(pan)} L` : `${pan} R`
 export const panRotation = (pan: number): string => `${pan * 4}deg`
