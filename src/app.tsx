@@ -1,4 +1,4 @@
-import {createEffect, onMount} from "solid-js"
+import {createEffect, ErrorBoundary, onMount} from "solid-js"
 import {StudioProvider, useStudio} from "./studio"
 import {Looper} from "./ui/Looper"
 
@@ -16,7 +16,13 @@ const Boot = () => {
 }
 
 export const App = () => (
-    <StudioProvider>
-        <Boot/>
-    </StudioProvider>
+    <ErrorBoundary fallback={(error, reset) => (
+        <div class="errbar">
+            UI crashed: {String(error)} <button class="add-track-row" onClick={reset}>Reload view</button>
+        </div>
+    )}>
+        <StudioProvider>
+            <Boot/>
+        </StudioProvider>
+    </ErrorBoundary>
 )
